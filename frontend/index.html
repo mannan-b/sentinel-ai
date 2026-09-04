@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sentinel — AP Fraud & Duplicate-Payment Control Agent</title>
+  <title>Sentinel — AI Finance Controller & AP Forensic Control Engine</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -22,8 +22,8 @@
           <span class="pulse-indicator"></span>
         </div>
         <div class="brand-titles">
-          <div class="brand-name">SENTINEL <span class="brand-tag">AP AGENT</span></div>
-          <div class="brand-tagline">Autonomous AP Fraud, Duplicate-Payment & Structuring Control Engine</div>
+          <div class="brand-name">SENTINEL <span class="brand-tag">AI FINANCE CONTROLLER</span></div>
+          <div class="brand-tagline">Autonomous 3-Way Reconciliation • Exception Resolution • AP Cash Outflow Exposure • BEC Defense</div>
         </div>
       </div>
 
@@ -40,13 +40,17 @@
             <option value="100">100 records</option>
           </select>
         </div>
+        <button id="btnOpenPolicy" class="btn btn-secondary">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+          Control Policy
+        </button>
         <button id="btnGenerate" class="btn btn-secondary">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
           Generate Batch
         </button>
         <button id="btnAnalyze" class="btn btn-primary pulse-btn">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-          Run Sentinel Agent
+          Run Control Pipeline
         </button>
       </div>
     </div>
@@ -56,97 +60,102 @@
   <div id="analysisOverlay" class="analysis-overlay hidden">
     <div class="analysis-modal">
       <div class="spinner-ring"></div>
-      <h3 id="analysisStatusText">Sentinel Agent Ingesting Batch...</h3>
+      <h3 id="analysisStatusText">Sentinel Ingesting Batch...</h3>
       <div class="progress-bar-container">
         <div id="analysisProgressBar" class="progress-bar-fill"></div>
       </div>
-      <div id="analysisStepDetails" class="step-subtext">Executing 3-way PO match & cross-batch structuring scans</div>
+      <div id="analysisStepDetails" class="step-subtext">Executing 3-way PO & GRN reconciliation, duplicate scan, and cash position forecasting</div>
     </div>
   </div>
 
   <main class="main-layout">
+    <!-- Top KPI Grid: Finance Control Center Summary -->
+    <div class="kpi-grid">
+      <div class="kpi-card card-total">
+        <div class="kpi-label">Batch Reconciled</div>
+        <div class="kpi-value" id="kpiTotal">75</div>
+        <div class="kpi-subtext" id="kpiMatchRate">86.7% 3-Way Match Rate</div>
+      </div>
+      <div class="kpi-card card-approved">
+        <div class="kpi-icon-badge">✓</div>
+        <div class="kpi-label">Ready for Payment</div>
+        <div class="kpi-value" id="kpiApproved">61</div>
+        <div class="kpi-subtext" id="kpiApprovedAmount">$482,100 Approved</div>
+      </div>
+      <div class="kpi-card card-hold">
+        <div class="kpi-icon-badge">!</div>
+        <div class="kpi-label">Active Exceptions</div>
+        <div class="kpi-value" id="kpiExceptionsCount">18</div>
+        <div class="kpi-subtext" id="kpiBlockedAmount">$136,500 Held / Under Review</div>
+      </div>
+      <div class="kpi-card card-fraud">
+        <div class="kpi-icon-badge">⚠</div>
+        <div class="kpi-label">Cash at Risk</div>
+        <div class="kpi-value" id="kpiCashAtRisk">$136,500</div>
+        <div class="kpi-subtext">Blocked Exposure / Fraud / BEC</div>
+      </div>
+      <div class="kpi-card card-duplicates">
+        <div class="kpi-icon-badge">✕</div>
+        <div class="kpi-label">Duplicate Prevented</div>
+        <div class="kpi-value" id="kpiDuplicatePrevented">$21,200</div>
+        <div class="kpi-subtext">2 Duplicate Resubmissions Halted</div>
+      </div>
+    </div>
+
+    <!-- Real-Time AP Cash Outflow & Control Alerts Bar -->
+    <div class="control-alerts-section">
+      <div class="cash-outflow-widget card-glass">
+        <div class="widget-header">
+          <div class="widget-title">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/></svg>
+            AP Cash Outflow Forecast (Projected Payables)
+          </div>
+          <span class="badge badge-success">Deterministic Net Exposure</span>
+        </div>
+        <div class="outflow-buckets-grid" id="outflowBucketsGrid">
+          <!-- Populated dynamically via JS -->
+        </div>
+      </div>
+    </div>
+
     <!-- Navigation Tabs -->
     <nav class="nav-tabs">
       <button class="tab-btn active" data-tab="tab-results">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
-        Results Dashboard
+        Invoices & 3-Way Status
+      </button>
+      <button class="tab-btn" data-tab="tab-workbench">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+        Exception Workbench (<span id="tabCountExceptions">18</span>)
+      </button>
+      <button class="tab-btn" data-tab="tab-payment-queue">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" x2="12" y1="2" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        Payment Queue & Cash
+      </button>
+      <button class="tab-btn" data-tab="tab-forensics">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24M14.83 9.17l4.24-4.24M14.83 14.83l4.24 4.24M9.17 14.83l-4.24 4.24"/></svg>
+        BEC & Structuring Controls
       </button>
       <button class="tab-btn" data-tab="tab-metrics">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
-        Scoring & Metrics Lab
+        Scorecard & Metrics
       </button>
-      <button class="tab-btn" data-tab="tab-structuring">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24M14.83 9.17l4.24-4.24M14.83 14.83l4.24 4.24M9.17 14.83l-4.24 4.24"/></svg>
-        Flagship Structuring Breakdown
+      <button class="tab-btn" data-tab="tab-audit">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="10"/></svg>
+        Audit Trail
       </button>
     </nav>
 
-    <!-- TAB 1: RESULTS DASHBOARD -->
+    <!-- TAB 1: INVOICES & 3-WAY MATCH TABLE -->
     <section id="tab-results" class="tab-content active">
-      <!-- High-Level KPI Summary Grid -->
-      <div class="kpi-grid">
-        <div class="kpi-card card-total">
-          <div class="kpi-label">Batch Processed</div>
-          <div class="kpi-value" id="kpiTotal">75</div>
-          <div class="kpi-subtext" id="kpiAutoResolvedPct">89.3% Auto-Resolved</div>
-        </div>
-        <div class="kpi-card card-approved">
-          <div class="kpi-icon-badge">✓</div>
-          <div class="kpi-label">Auto-Approved</div>
-          <div class="kpi-value" id="kpiApproved">64</div>
-          <div class="kpi-subtext" id="kpiApprovedPct">85.3% Clean 3-Way Match</div>
-        </div>
-        <div class="kpi-card card-duplicates">
-          <div class="kpi-icon-badge">✕</div>
-          <div class="kpi-label">Duplicate Rejections</div>
-          <div class="kpi-value" id="kpiDuplicates">2</div>
-          <div class="kpi-subtext">Prevented Double-Disbursement</div>
-        </div>
-        <div class="kpi-card card-fraud">
-          <div class="kpi-icon-badge">⚠</div>
-          <div class="kpi-label">Fraud Escalations</div>
-          <div class="kpi-value" id="kpiFraud">5</div>
-          <div class="kpi-subtext">Structuring + Bank Takeover</div>
-        </div>
-        <div class="kpi-card card-hold">
-          <div class="kpi-icon-badge">?</div>
-          <div class="kpi-label">Hold for Review</div>
-          <div class="kpi-value" id="kpiHold">4</div>
-          <div class="kpi-subtext">Explicit Refusal to Guess</div>
-        </div>
-      </div>
-
-      <!-- FLAGSHIP FINDING HERO BANNER -->
-      <div id="flagshipBanner" class="flagship-banner">
-        <div class="flagship-glow"></div>
-        <div class="flagship-content">
-          <div class="flagship-badge">
-            <span class="flagship-sparkle">★</span> FLAGSHIP FINDING: CROSS-INVOICE STRUCTURING CAUGHT
-          </div>
-          <h2 class="flagship-title" id="flagshipTitle">
-            Autonomous Multi-Invoice Smurfing Defense Activated
-          </h2>
-          <p class="flagship-desc" id="flagshipDescription">
-            Sentinel detected a structured evasion attack from <strong>Apex Security & Guarding LLC</strong>: 4 split invoices totaling <strong>$38,000.00</strong>, each submitted at $9,500.00 to deliberately hover right below the $10,000.00 single-invoice approval threshold.
-          </p>
-          <div class="flagship-chips" id="flagshipChips">
-            <!-- Dynamic chip items -->
-          </div>
-        </div>
-        <div class="flagship-action">
-          <button class="btn btn-flagship" id="btnInspectStructuring">Inspect Correlation Graph →</button>
-        </div>
-      </div>
-
-      <!-- Filter and Table Section -->
       <div class="table-container-card">
         <div class="table-header-toolbar">
           <div class="filter-pills">
             <button class="filter-pill active" data-filter="ALL">All (<span id="countAll">75</span>)</button>
-            <button class="filter-pill" data-filter="auto_approve">Auto-Approve (<span id="countApprove">64</span>)</button>
+            <button class="filter-pill" data-filter="auto_approve">Auto-Approved (<span id="countApprove">61</span>)</button>
             <button class="filter-pill" data-filter="reject_duplicate">Duplicates (<span id="countDup">2</span>)</button>
-            <button class="filter-pill" data-filter="escalate_fraud">Fraud Risks (<span id="countFraud">5</span>)</button>
-            <button class="filter-pill" data-filter="hold_for_review">Review Holds (<span id="countReview">4</span>)</button>
+            <button class="filter-pill" data-filter="escalate_fraud">Fraud / BEC (<span id="countFraud">6</span>)</button>
+            <button class="filter-pill" data-filter="hold_for_review">Reconciliation Holds (<span id="countReview">6</span>)</button>
             <button class="filter-pill pill-structuring" data-filter="STRUCTURING">Structuring Cluster (4)</button>
           </div>
           <div class="search-box">
@@ -159,15 +168,15 @@
           <table class="sentinel-table" id="invoicesTable">
             <thead>
               <tr>
-                <th width="120">Invoice ID</th>
-                <th>Vendor</th>
-                <th width="110">Amount</th>
-                <th width="130">PO Match</th>
-                <th width="130">Bank Check</th>
-                <th width="150">Verdict</th>
-                <th width="80">Conf.</th>
-                <th>Primary Justification & Cited Evidence</th>
-                <th width="100">Actions</th>
+                <th width="125">Invoice ID</th>
+                <th>Vendor & Terms</th>
+                <th width="105">Amount</th>
+                <th width="115">Due Date</th>
+                <th width="155">3-Way Match</th>
+                <th width="130">Payment Status</th>
+                <th width="145">Verdict</th>
+                <th>Primary Justification & Cited Facts</th>
+                <th width="85">Action</th>
               </tr>
             </thead>
             <tbody id="invoicesTableBody">
@@ -178,9 +187,183 @@
       </div>
     </section>
 
-    <!-- TAB 2: SCORING & METRICS LAB -->
+    <!-- TAB 2: EXCEPTION WORKBENCH -->
+    <section id="tab-workbench" class="tab-content">
+      <div class="workbench-layout">
+        <!-- Exception Groups Summary Sidebar/Grid -->
+        <div class="exception-groups-banner">
+          <div class="workbench-title-row">
+            <h3>Aggregated Operational Issues</h3>
+            <span class="subtext">Grouping related multi-invoice patterns for bulk controller action</span>
+          </div>
+          <div class="groups-grid" id="exceptionGroupsGrid">
+            <!-- Rendered via JavaScript -->
+          </div>
+        </div>
+
+        <!-- Exception Filters & Table -->
+        <div class="table-container-card" style="margin-top: 20px;">
+          <div class="table-header-toolbar">
+            <div class="filter-pills">
+              <button class="filter-pill active" data-ex-filter="ALL">All Severities</button>
+              <button class="filter-pill pill-structuring" data-ex-filter="CRITICAL">Critical</button>
+              <button class="filter-pill" data-ex-filter="HIGH">High</button>
+              <button class="filter-pill" data-ex-filter="MEDIUM">Medium</button>
+              <button class="filter-pill" data-ex-filter="RESOLVED">Resolved</button>
+            </div>
+            <div style="font-size: 0.82rem; color: var(--text-muted);">
+              Click <strong>Resolve / Action</strong> to update payment status with audit trail
+            </div>
+          </div>
+
+          <div class="table-responsive">
+            <table class="sentinel-table" id="exceptionsTable">
+              <thead>
+                <tr>
+                  <th width="110">Priority</th>
+                  <th width="130">Exception ID</th>
+                  <th>Vendor & Invoice</th>
+                  <th width="130">Type</th>
+                  <th width="110">Impact</th>
+                  <th>Evidence & Recommended Action</th>
+                  <th width="120">Owner</th>
+                  <th width="100">Status</th>
+                  <th width="130">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="exceptionsTableBody">
+                <!-- Rendered via JavaScript -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: PAYMENT QUEUE & CASH EXPOSURE -->
+    <section id="tab-payment-queue" class="tab-content">
+      <div class="payment-queue-layout">
+        <div class="queue-summary-cards">
+          <div class="q-card q-ready">
+            <div class="q-title">Ready for Payment</div>
+            <div class="q-amount" id="qReadyAmount">$0.00</div>
+            <div class="q-sub" id="qReadyCount">0 Invoices Approved</div>
+          </div>
+          <div class="q-card q-reconcile">
+            <div class="q-title">Blocked by Reconciliation</div>
+            <div class="q-amount" id="qReconcileAmount">$0.00</div>
+            <div class="q-sub" id="qReconcileCount">0 Qty/Price Mismatches</div>
+          </div>
+          <div class="q-card q-doc">
+            <div class="q-title">Missing Documentation</div>
+            <div class="q-amount" id="qDocAmount">$0.00</div>
+            <div class="q-sub" id="qDocCount">0 Missing GRNs</div>
+          </div>
+          <div class="q-card q-fraud">
+            <div class="q-title">Fraud / BEC Hold</div>
+            <div class="q-amount" id="qFraudAmount">$0.00</div>
+            <div class="q-sub" id="qFraudCount">0 High-Risk Holds</div>
+          </div>
+          <div class="q-card q-dup">
+            <div class="q-title">Duplicate Rejected</div>
+            <div class="q-amount" id="qDupAmount">$0.00</div>
+            <div class="q-sub" id="qDupCount">0 Rejected Invoices</div>
+          </div>
+        </div>
+
+        <div class="table-container-card" style="margin-top: 20px;">
+          <div class="table-header-toolbar">
+            <h3 style="font-size: 1rem; color: #fff;">Payment Schedule by Maturity & Due Date</h3>
+            <span class="subtext">Forward cash exposure model (0-7d, 8-14d, 15-30d, 30+d)</span>
+          </div>
+          <div class="table-responsive">
+            <table class="sentinel-table">
+              <thead>
+                <tr>
+                  <th>Maturity Window</th>
+                  <th>Approved Outflow</th>
+                  <th>Held Outflow (Exceptions)</th>
+                  <th>High-Risk / BEC Outflow</th>
+                  <th>Total Projected Payable</th>
+                  <th>Exposure Risk Level</th>
+                </tr>
+              </thead>
+              <tbody id="paymentScheduleBody">
+                <!-- Rendered via JavaScript -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 4: FORENSICS & BEC BANK CONTROLS -->
+    <section id="tab-forensics" class="tab-content">
+      <!-- BEC Bank Change Alert Workflow Card -->
+      <div class="bec-control-card card-glass" id="becControlCard">
+        <div class="struct-header">
+          <div class="struct-title-row">
+            <span class="badge badge-fraud struct-badge">BEC Payment Control Protocol</span>
+            <h2>Vendor Bank Routing Change Verification Gate</h2>
+          </div>
+          <p class="struct-summary">
+            Sentinel detected a recent bank account fingerprint modification (< 30 days) on <strong>CyberShield Defense Corp</strong>. All payments are automatically locked in <code>FRAUD_HOLD</code> until all 4 verification controls are verified by a Finance Officer.
+          </p>
+        </div>
+
+        <div class="bec-checklist-grid" id="becChecklistGrid">
+          <!-- Rendered via JavaScript with interactive verification checkboxes -->
+        </div>
+      </div>
+
+      <!-- Structuring Breakdown -->
+      <div class="structuring-detail-card card-glass" style="margin-top: 24px;">
+        <div class="struct-header">
+          <div class="struct-title-row">
+            <span class="badge badge-fraud struct-badge">Flagship Defense Case</span>
+            <h2>Cross-Invoice Structuring (Smurfing) Analysis</h2>
+          </div>
+          <p class="struct-summary">
+            <strong>Apex Security & Guarding LLC</strong> split a <strong>$38,000.00</strong> obligation into 4 sub-$10,000 un-PO'd invoices within 3 days. Sentinel isolated the cluster and placed all 4 invoices on fraud hold.
+          </p>
+        </div>
+
+        <div class="invoices-flow-grid" id="structuringFlowGrid">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 5: SCORECARD & METRICS LAB -->
     <section id="tab-metrics" class="tab-content">
       <div class="metrics-grid">
+        <!-- Reconciliation & Automation Efficiency -->
+        <div class="metric-box card-glass">
+          <div class="metric-header">
+            <h3>Reconciliation & AP Efficiency</h3>
+            <span class="badge badge-success">3-Way Match</span>
+          </div>
+          <div class="scores-row">
+            <div class="score-item">
+              <div class="score-num" id="metricMatchRate">86.7%</div>
+              <div class="score-tag">3-Way Match Rate</div>
+            </div>
+            <div class="score-item">
+              <div class="score-num" id="metricAutoRate">81.3%</div>
+              <div class="score-tag">Auto-Approved</div>
+            </div>
+            <div class="score-item">
+              <div class="score-num" id="metricHumanRate">18.7%</div>
+              <div class="score-tag">Human Review</div>
+            </div>
+          </div>
+          <div class="citation-stat">
+            <span class="stat-label">Evidence Citation Density:</span>
+            <strong id="metricAvgCitations" class="stat-val">3.2 facts / flag</strong>
+          </div>
+          <p class="metric-foot">Deterministic 3-way match verified against PO and warehouse GRN dock entries with zero arithmetic hallucination.</p>
+        </div>
+
         <!-- Fraud Detection Card -->
         <div class="metric-box card-glass">
           <div class="metric-header">
@@ -202,18 +385,18 @@
             </div>
           </div>
           <div class="confusion-mini">
-            <div class="conf-cell">TP: <strong id="metricFraudTP">5</strong></div>
+            <div class="conf-cell">TP: <strong id="metricFraudTP">6</strong></div>
             <div class="conf-cell">FP: <strong id="metricFraudFP">0</strong></div>
             <div class="conf-cell">FN: <strong id="metricFraudFN">0</strong></div>
           </div>
-          <p class="metric-foot">Caught all structuring & compromised bank fingerprint attacks with 0 false alarms on clean vendors.</p>
+          <p class="metric-foot">Caught all structuring smurfing, compromised BEC bank routing changes, and vendor collusion with zero false alarms.</p>
         </div>
 
         <!-- Duplicate Rejection Card -->
         <div class="metric-box card-glass">
           <div class="metric-header">
-            <h3>Duplicate Payment Prevention</h3>
-            <span class="badge badge-dup">Exact & Near Match</span>
+            <h3>Hybrid Duplicate Prevention</h3>
+            <span class="badge badge-dup">Multi-Factor Score</span>
           </div>
           <div class="scores-row">
             <div class="score-item">
@@ -234,91 +417,88 @@
             <div class="conf-cell">FP: <strong id="metricDupFP">0</strong></div>
             <div class="conf-cell">FN: <strong id="metricDupFN">0</strong></div>
           </div>
-          <p class="metric-foot">Zero duplicate disbursements permitted; differentiated original legitimate invoice from subsequent duplicate copies.</p>
-        </div>
-
-        <!-- Operational Efficiency Card -->
-        <div class="metric-box card-glass">
-          <div class="metric-header">
-            <h3>Operational AP Efficiency</h3>
-            <span class="badge badge-success">Automation</span>
-          </div>
-          <div class="scores-row">
-            <div class="score-item">
-              <div class="score-num" id="metricAutoRate">89.3%</div>
-              <div class="score-tag">Auto-Resolved Rate</div>
-            </div>
-            <div class="score-item">
-              <div class="score-num" id="metricHoldRate">10.7%</div>
-              <div class="score-tag">Human Review Route</div>
-            </div>
-            <div class="score-item">
-              <div class="score-num" id="metricFPCount">0</div>
-              <div class="score-tag">False Positives</div>
-            </div>
-          </div>
-          <div class="citation-stat">
-            <span class="stat-label">Evidence Citation Density:</span>
-            <strong id="metricAvgCitations" class="stat-val">3.2 facts / flag</strong>
-          </div>
-          <p class="metric-foot">Every flagged decision is strictly grounded with cited facts. Refusal path gracefully handles missing POs and first-time vendors.</p>
+          <p class="metric-foot">2-Stage hybrid engine combining Levenshtein string distance, amount ratio, temporal decay, and Jaccard line-item overlap.</p>
         </div>
       </div>
     </section>
 
-    <!-- TAB 3: FLAGSHIP STRUCTURING BREAKDOWN -->
-    <section id="tab-structuring" class="tab-content">
-      <div class="structuring-detail-card card-glass">
-        <div class="struct-header">
-          <div class="struct-title-row">
-            <span class="badge badge-fraud struct-badge">Flagship Defense Case</span>
-            <h2>Cross-Invoice Structuring (Smurfing) Analysis</h2>
-          </div>
-          <p class="struct-summary">
-            Structuring is an evasion technique where a supplier splits a large obligation across multiple separate sub-$10k invoices submitted within days of each other to evade mandatory dual-authorization or director-level approvals. <strong>Single-row classifiers miss this completely.</strong> Sentinel isolates the entire cluster across the batch.
-          </p>
+    <!-- TAB 6: AUDIT TRAIL LOG -->
+    <section id="tab-audit" class="tab-content">
+      <div class="table-container-card">
+        <div class="table-header-toolbar">
+          <h3 style="font-size: 1rem; color: #fff;">Immutable Forensic Audit Trail</h3>
+          <span class="subtext">Chronological record of all system, AI, and human controller events</span>
         </div>
-
-        <div class="structuring-visual-container">
-          <div class="cluster-summary-bar">
-            <div class="cluster-stat">
-              <span>Target Vendor</span>
-              <strong>Apex Security & Guarding LLC</strong>
-            </div>
-            <div class="cluster-stat">
-              <span>Combined Obligation</span>
-              <strong class="text-rose">$38,000.00</strong>
-            </div>
-            <div class="cluster-stat">
-              <span>Approval Threshold Evaded</span>
-              <strong>$10,000.00</strong>
-            </div>
-            <div class="cluster-stat">
-              <span>Submission Window</span>
-              <strong>3 Days (Aug 12 - Aug 14)</strong>
-            </div>
-            <div class="cluster-stat">
-              <span>PO Status</span>
-              <strong class="text-amber">No Approved POs</strong>
-            </div>
-          </div>
-
-          <div class="invoices-flow-grid" id="structuringFlowGrid">
-            <!-- Dynamically populated -->
-          </div>
+        <div class="table-responsive">
+          <table class="sentinel-table">
+            <thead>
+              <tr>
+                <th width="160">Timestamp</th>
+                <th width="180">Action</th>
+                <th width="150">Actor</th>
+                <th width="150">Affected Record</th>
+                <th width="140">Previous State</th>
+                <th width="160">New State</th>
+                <th>Reason / Operational Justification</th>
+              </tr>
+            </thead>
+            <tbody id="auditTrailBody">
+              <!-- Rendered via JavaScript -->
+            </tbody>
+          </table>
         </div>
       </div>
     </section>
   </main>
+
+  <!-- CONTROL POLICY DRAWER / MODAL -->
+  <div id="policyModal" class="modal-backdrop hidden">
+    <div class="modal-card" style="max-width: 600px;">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <span class="modal-tag">FINANCE CONTROL POLICIES</span>
+          <h2>Configurable Thresholds</h2>
+        </div>
+        <button class="modal-close" id="btnClosePolicy">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="policy-form">
+          <div class="form-group">
+            <label>PO Variance Tolerance (%)</label>
+            <input type="number" id="policyPOTolerance" value="5.0" step="0.5" class="input-control" />
+            <span class="help-text">Invoices exceeding PO approved amount by more than this % are held for review.</span>
+          </div>
+          <div class="form-group">
+            <label>Approval Threshold ($)</label>
+            <input type="number" id="policyApprovalThreshold" value="10000.0" step="1000" class="input-control" />
+            <span class="help-text">Single invoice limit requiring dual-signoff; structuring scan detects split evasions beneath this limit.</span>
+          </div>
+          <div class="form-group">
+            <label>Duplicate Similarity Threshold (0.0 to 1.0)</label>
+            <input type="number" id="policyDupThreshold" value="0.85" step="0.05" min="0.5" max="1.0" class="input-control" />
+            <span class="help-text">Hybrid multi-factor score threshold to flag near-duplicate invoice resubmissions.</span>
+          </div>
+          <div class="form-group">
+            <label>Bank Change Cooling Period (Days)</label>
+            <input type="number" id="policyBankCooling" value="30" class="input-control" />
+            <span class="help-text">Recent bank account modifications within this window trigger automatic BEC payment holds.</span>
+          </div>
+          <button id="btnSavePolicy" class="btn btn-primary" style="width: 100%; margin-top: 12px;">
+            Save Policy & Re-Evaluate Batch
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- EVIDENCE DOSSIER MODAL -->
   <div id="dossierModal" class="modal-backdrop hidden">
     <div class="modal-card">
       <div class="modal-header">
         <div class="modal-title-group">
-          <span class="modal-tag">EVIDENCE DOSSIER</span>
-          <h2 id="modalInvoiceId">INV-STRUC-101</h2>
-          <span class="modal-vendor-sub" id="modalVendorName">Apex Security & Guarding LLC</span>
+          <span class="modal-tag">EVIDENCE DOSSIER & 3-WAY RECONCILIATION</span>
+          <h2 id="modalInvoiceId">INV-101-2001</h2>
+          <span class="modal-vendor-sub" id="modalVendorName">Vendor Name</span>
         </div>
         <button class="modal-close" id="btnCloseModal">✕</button>
       </div>
@@ -327,11 +507,12 @@
         <!-- Verdict Summary Box -->
         <div id="modalVerdictBox" class="dossier-verdict-banner">
           <div class="verdict-main-row">
-            <div class="verdict-type-tag" id="modalVerdictTag">ESCALATE_FRAUD</div>
-            <div class="verdict-confidence" id="modalConfidence">Confidence: 99.0%</div>
+            <div class="verdict-type-tag" id="modalVerdictTag">AUTO_APPROVE</div>
+            <div class="verdict-confidence" id="modalConfidence">Confidence: 98.0%</div>
           </div>
           <div class="verdict-reason" id="modalPrimaryReason">Reason details</div>
-          <div class="verdict-action" id="modalAction">Action recommendation</div>
+          <div class="verdict-action" id="modalAction" style="margin-bottom: 4px;">Action recommendation</div>
+          <div class="verdict-next-action" id="modalNextAction" style="font-size:0.8rem; color:#818cf8;">Next Best Action: ...</div>
         </div>
 
         <!-- Cited Evidence Breakdown -->
@@ -342,53 +523,75 @@
           </div>
         </div>
 
-        <!-- 5 Pillars of Evidence Grid -->
+        <!-- 3-Way Match & 5 Pillars Grid -->
         <div class="pillars-grid">
-          <!-- Pillar 1: PO Match -->
           <div class="pillar-card">
             <div class="pillar-title">1. Purchase Order Match</div>
             <div id="pillarPO" class="pillar-content">--</div>
           </div>
-
-          <!-- Pillar 2: Bank Fingerprint -->
           <div class="pillar-card">
-            <div class="pillar-title">2. Bank Routing Fingerprint</div>
+            <div class="pillar-title">2. Goods Receipt (GRN) 3-Way Match</div>
+            <div id="pillarGRN" class="pillar-content">--</div>
+          </div>
+          <div class="pillar-card">
+            <div class="pillar-title">3. Bank Routing & BEC Check</div>
             <div id="pillarBank" class="pillar-content">--</div>
           </div>
-
-          <!-- Pillar 3: Duplicate Scan -->
           <div class="pillar-card">
-            <div class="pillar-title">3. Batch Duplicate Scan</div>
+            <div class="pillar-title">4. Hybrid Duplicate Scan</div>
             <div id="pillarDup" class="pillar-content">--</div>
           </div>
-
-          <!-- Pillar 4: Vendor History -->
-          <div class="pillar-card">
-            <div class="pillar-title">4. Vendor History Profile</div>
-            <div id="pillarVendor" class="pillar-content">--</div>
-          </div>
-
-          <!-- Pillar 5: Structuring Scan -->
           <div class="pillar-card pillar-span-2">
-            <div class="pillar-title">5. Cross-Batch Structuring Cluster Analysis</div>
+            <div class="pillar-title">5. Cross-Batch Structuring & Collusion Scan</div>
             <div id="pillarStructuring" class="pillar-content">--</div>
           </div>
         </div>
 
         <!-- Human Reviewer Override Panel -->
         <div class="override-panel">
-          <h4>Human-in-the-Loop Override / AP Audit Note</h4>
+          <h4>Human Controller Override & Audit Logging</h4>
           <div class="override-controls">
             <select id="overrideVerdictSelect" class="input-control">
-              <option value="auto_approve">Override to: Auto-Approve</option>
+              <option value="auto_approve">Override to: Auto-Approve (Ready for Payment)</option>
               <option value="hold_for_review">Override to: Hold for Review</option>
-              <option value="escalate_fraud">Override to: Escalate (Fraud Risk)</option>
+              <option value="escalate_fraud">Override to: Escalate (Fraud / BEC Hold)</option>
               <option value="reject_duplicate">Override to: Reject (Duplicate)</option>
             </select>
-            <input type="text" id="overrideNotes" placeholder="Reason for AP supervisor override..." class="input-control" />
+            <input type="text" id="overrideNotes" placeholder="Required audit note for controller override..." class="input-control" />
             <button id="btnSubmitOverride" class="btn btn-secondary">Apply Override</button>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- EXCEPTION ACTION MODAL -->
+  <div id="exceptionModal" class="modal-backdrop hidden">
+    <div class="modal-card" style="max-width: 550px;">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <span class="modal-tag">EXCEPTION ACTION WORKBENCH</span>
+          <h2 id="modalExceptionId">EXC-GRN-01</h2>
+        </div>
+        <button class="modal-close" id="btnCloseExceptionModal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="modalExceptionDetails" style="font-size:0.88rem; color:#cbd5e1; margin-bottom:12px;">--</div>
+        <div class="form-group">
+          <label>Operational Resolution Action</label>
+          <select id="exceptionActionSelect" class="input-control">
+            <option value="RESOLVED">Resolve & Release for Payment (Documentation Verified)</option>
+            <option value="SHORT_PAY">Authorize Short-Pay Disbursement (Adjusted for Received Qty)</option>
+            <option value="ESCALATED">Escalate to Senior Controller / Audit</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Resolution Audit Note</label>
+          <input type="text" id="exceptionResolutionNotes" placeholder="e.g. Warehouse confirmed goods received on Dock B; GRN generated..." class="input-control" />
+        </div>
+        <button id="btnSubmitExceptionResolution" class="btn btn-primary" style="width:100%; margin-top:12px;">
+          Submit Resolution with Audit Entry
+        </button>
       </div>
     </div>
   </div>

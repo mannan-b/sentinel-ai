@@ -1,7 +1,7 @@
 from typing import List, Dict, Any, Optional
 from backend.models import (
     Invoice, AgentVerdict, EvidenceDossier, BatchScorecard,
-    ClassMetrics, StructuringFlagshipMetric
+    ClassMetrics, StructuringFlagshipMetric, FinanceException
 )
 
 def compute_binary_metrics(tp: int, fp: int, fn: int) -> ClassMetrics:
@@ -21,21 +21,28 @@ def compute_binary_metrics(tp: int, fp: int, fn: int) -> ClassMetrics:
 def compute_batch_scorecard(
     invoices: List[Invoice],
     verdicts: List[AgentVerdict],
-    dossiers: Dict[str, EvidenceDossier]
+    dossiers: Dict[str, EvidenceDossier],
+    exceptions: Optional[List[FinanceException]] = None
 ) -> BatchScorecard:
     """
-    Evaluates agent verdicts against hidden ground truth labels.
+    Evaluates agent verdicts and operational finance metrics against hidden ground truth labels.
     """
     total = len(invoices)
     if total == 0:
         raise ValueError("Cannot score empty batch")
 
     verdict_map: Dict[str, AgentVerdict] = {v.invoice_id: v for v in verdicts}
+    exceptions_list = exceptions or []
     
     auto_approved_count = 0
     held_for_review_count = 0
     escalate_fraud_count = 0
     reject_duplicate_count = 0
+
+    reconciliation_matched_count = 0
+    payment_value_blocked = 0.0
+    duplicate_value_prevented = 0.0
+    fraud_risk_value_escalated = 0.0
 
     # Duplicate class confusion counts
     dup_tp = 0
@@ -49,7 +56,6 @@ def compute_batch_scorecard(
 
     # False positive cost on legitimate invoices
     legitimate_false_positive_count = 0
-
     non_approve_citation_counts = []
     
     # Flagship structuring tracking
@@ -63,17 +69,24 @@ def compute_batch_scorecard(
         dossier = dossiers[inv.invoice_id]
         gt = inv.ground_truth_label
 
-        # Count verdicts
+        # 3-Way match check
+        if dossier.receipt_evidence.match_status == "EXACT_3WAY_MATCH" and dossier.po_evidence.status in ["EXACT_MATCH", "WITHIN_TOLERANCE"]:
+            reconciliation_matched_count += 1
+
+        # Count verdicts & financial values
         if v.verdict == "auto_approve":
             auto_approved_count += 1
         elif v.verdict == "hold_for_review":
             held_for_review_count += 1
+            payment_value_blocked += inv.amount
             non_approve_citation_counts.append(len(v.cited_evidence))
         elif v.verdict == "escalate_fraud":
             escalate_fraud_count += 1
+            fraud_risk_value_escalated += inv.amount
             non_approve_citation_counts.append(len(v.cited_evidence))
         elif v.verdict == "reject_duplicate":
             reject_duplicate_count += 1
+            duplicate_value_prevented += inv.amount
             non_approve_citation_counts.append(len(v.cited_evidence))
 
         # Duplicate scoring
@@ -131,6 +144,10 @@ def compute_batch_scorecard(
         )
     )
 
+    total_exc = len(exceptions_list)
+    resolved_exc = len([e for e in exceptions_list if e.status == "RESOLVED"])
+    exc_res_rate = round((resolved_exc / total_exc) * 100, 1) if total_exc > 0 else 100.0
+
     return BatchScorecard(
         total_invoices=total,
         auto_approved_count=auto_approved_count,
@@ -144,6 +161,17 @@ def compute_batch_scorecard(
         
         auto_resolved_pct=round((auto_resolved_count / total) * 100, 1),
         human_routing_pct=round((held_for_review_count / total) * 100, 1),
+
+        reconciliation_match_rate=round((reconciliation_matched_count / total) * 100, 1),
+        exception_rate=round((total_exc / total) * 100, 1),
+        exception_resolution_rate=exc_res_rate,
+        total_exceptions_count=total_exc,
+        resolved_exceptions_count=resolved_exc,
+
+        payment_value_blocked=round(payment_value_blocked, 2),
+        duplicate_value_prevented=round(duplicate_value_prevented, 2),
+        fraud_risk_value_escalated=round(fraud_risk_value_escalated, 2),
+        cash_currently_at_risk=round(payment_value_blocked + fraud_risk_value_escalated, 2),
         
         duplicate_metrics=duplicate_metrics,
         fraud_metrics=fraud_metrics,
