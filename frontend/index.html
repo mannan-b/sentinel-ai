@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sentinel — AP Fraud & Duplicate-Payment Control Agent</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="dark-theme">
+  <!-- Top Application Navbar -->
+  <header class="app-header">
+    <div class="header-container">
+      <div class="brand-section">
+        <div class="brand-logo-badge">
+          <svg class="shield-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            <path d="m9 12 2 2 4-4"/>
+          </svg>
+          <span class="pulse-indicator"></span>
+        </div>
+        <div class="brand-titles">
+          <div class="brand-name">SENTINEL <span class="brand-tag">AP AGENT</span></div>
+          <div class="brand-tagline">Autonomous AP Fraud, Duplicate-Payment & Structuring Control Engine</div>
+        </div>
+      </div>
+
+      <div class="header-controls">
+        <div class="control-group">
+          <label for="batchSeed">Seed</label>
+          <input type="number" id="batchSeed" value="42" min="1" max="99999" class="input-control seed-input" />
+        </div>
+        <div class="control-group">
+          <label for="batchSize">Invoices</label>
+          <select id="batchSize" class="input-control select-control">
+            <option value="50">50 records</option>
+            <option value="75" selected>75 records</option>
+            <option value="100">100 records</option>
+          </select>
+        </div>
+        <button id="btnGenerate" class="btn btn-secondary">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+          Generate Batch
+        </button>
+        <button id="btnAnalyze" class="btn btn-primary pulse-btn">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          Run Sentinel Agent
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Progress Bar Overlay during Analysis -->
+  <div id="analysisOverlay" class="analysis-overlay hidden">
+    <div class="analysis-modal">
+      <div class="spinner-ring"></div>
+      <h3 id="analysisStatusText">Sentinel Agent Ingesting Batch...</h3>
+      <div class="progress-bar-container">
+        <div id="analysisProgressBar" class="progress-bar-fill"></div>
+      </div>
+      <div id="analysisStepDetails" class="step-subtext">Executing 3-way PO match & cross-batch structuring scans</div>
+    </div>
+  </div>
+
+  <main class="main-layout">
+    <!-- Navigation Tabs -->
+    <nav class="nav-tabs">
+      <button class="tab-btn active" data-tab="tab-results">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+        Results Dashboard
+      </button>
+      <button class="tab-btn" data-tab="tab-metrics">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+        Scoring & Metrics Lab
+      </button>
+      <button class="tab-btn" data-tab="tab-structuring">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24M14.83 9.17l4.24-4.24M14.83 14.83l4.24 4.24M9.17 14.83l-4.24 4.24"/></svg>
+        Flagship Structuring Breakdown
+      </button>
+    </nav>
+
+    <!-- TAB 1: RESULTS DASHBOARD -->
+    <section id="tab-results" class="tab-content active">
+      <!-- High-Level KPI Summary Grid -->
+      <div class="kpi-grid">
+        <div class="kpi-card card-total">
+          <div class="kpi-label">Batch Processed</div>
+          <div class="kpi-value" id="kpiTotal">75</div>
+          <div class="kpi-subtext" id="kpiAutoResolvedPct">89.3% Auto-Resolved</div>
+        </div>
+        <div class="kpi-card card-approved">
+          <div class="kpi-icon-badge">✓</div>
+          <div class="kpi-label">Auto-Approved</div>
+          <div class="kpi-value" id="kpiApproved">64</div>
+          <div class="kpi-subtext" id="kpiApprovedPct">85.3% Clean 3-Way Match</div>
+        </div>
+        <div class="kpi-card card-duplicates">
+          <div class="kpi-icon-badge">✕</div>
+          <div class="kpi-label">Duplicate Rejections</div>
+          <div class="kpi-value" id="kpiDuplicates">2</div>
+          <div class="kpi-subtext">Prevented Double-Disbursement</div>
+        </div>
+        <div class="kpi-card card-fraud">
+          <div class="kpi-icon-badge">⚠</div>
+          <div class="kpi-label">Fraud Escalations</div>
+          <div class="kpi-value" id="kpiFraud">5</div>
+          <div class="kpi-subtext">Structuring + Bank Takeover</div>
+        </div>
+        <div class="kpi-card card-hold">
+          <div class="kpi-icon-badge">?</div>
+          <div class="kpi-label">Hold for Review</div>
+          <div class="kpi-value" id="kpiHold">4</div>
+          <div class="kpi-subtext">Explicit Refusal to Guess</div>
+        </div>
+      </div>
+
+      <!-- FLAGSHIP FINDING HERO BANNER -->
+      <div id="flagshipBanner" class="flagship-banner">
+        <div class="flagship-glow"></div>
+        <div class="flagship-content">
+          <div class="flagship-badge">
+            <span class="flagship-sparkle">★</span> FLAGSHIP FINDING: CROSS-INVOICE STRUCTURING CAUGHT
+          </div>
+          <h2 class="flagship-title" id="flagshipTitle">
+            Autonomous Multi-Invoice Smurfing Defense Activated
+          </h2>
+          <p class="flagship-desc" id="flagshipDescription">
+            Sentinel detected a structured evasion attack from <strong>Apex Security & Guarding LLC</strong>: 4 split invoices totaling <strong>$38,000.00</strong>, each submitted at $9,500.00 to deliberately hover right below the $10,000.00 single-invoice approval threshold.
+          </p>
+          <div class="flagship-chips" id="flagshipChips">
+            <!-- Dynamic chip items -->
+          </div>
+        </div>
+        <div class="flagship-action">
+          <button class="btn btn-flagship" id="btnInspectStructuring">Inspect Correlation Graph →</button>
+        </div>
+      </div>
+
+      <!-- Filter and Table Section -->
+      <div class="table-container-card">
+        <div class="table-header-toolbar">
+          <div class="filter-pills">
+            <button class="filter-pill active" data-filter="ALL">All (<span id="countAll">75</span>)</button>
+            <button class="filter-pill" data-filter="auto_approve">Auto-Approve (<span id="countApprove">64</span>)</button>
+            <button class="filter-pill" data-filter="reject_duplicate">Duplicates (<span id="countDup">2</span>)</button>
+            <button class="filter-pill" data-filter="escalate_fraud">Fraud Risks (<span id="countFraud">5</span>)</button>
+            <button class="filter-pill" data-filter="hold_for_review">Review Holds (<span id="countReview">4</span>)</button>
+            <button class="filter-pill pill-structuring" data-filter="STRUCTURING">Structuring Cluster (4)</button>
+          </div>
+          <div class="search-box">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+            <input type="text" id="searchInput" placeholder="Search vendor, invoice ID, PO..." />
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="sentinel-table" id="invoicesTable">
+            <thead>
+              <tr>
+                <th width="120">Invoice ID</th>
+                <th>Vendor</th>
+                <th width="110">Amount</th>
+                <th width="130">PO Match</th>
+                <th width="130">Bank Check</th>
+                <th width="150">Verdict</th>
+                <th width="80">Conf.</th>
+                <th>Primary Justification & Cited Evidence</th>
+                <th width="100">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="invoicesTableBody">
+              <!-- Rendered via JavaScript -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: SCORING & METRICS LAB -->
+    <section id="tab-metrics" class="tab-content">
+      <div class="metrics-grid">
+        <!-- Fraud Detection Card -->
+        <div class="metric-box card-glass">
+          <div class="metric-header">
+            <h3>Fraud Risk Detection Scorecard</h3>
+            <span class="badge badge-fraud">Ground Truth Comparison</span>
+          </div>
+          <div class="scores-row">
+            <div class="score-item">
+              <div class="score-num" id="metricFraudPrec">100.0%</div>
+              <div class="score-tag">Precision</div>
+            </div>
+            <div class="score-item">
+              <div class="score-num" id="metricFraudRecall">100.0%</div>
+              <div class="score-tag">Recall</div>
+            </div>
+            <div class="score-item">
+              <div class="score-num" id="metricFraudF1">1.000</div>
+              <div class="score-tag">F1 Score</div>
+            </div>
+          </div>
+          <div class="confusion-mini">
+            <div class="conf-cell">TP: <strong id="metricFraudTP">5</strong></div>
+            <div class="conf-cell">FP: <strong id="metricFraudFP">0</strong></div>
+            <div class="conf-cell">FN: <strong id="metricFraudFN">0</strong></div>
+          </div>
+          <p class="metric-foot">Caught all structuring & compromised bank fingerprint attacks with 0 false alarms on clean vendors.</p>
+        </div>
+
+        <!-- Duplicate Rejection Card -->
+        <div class="metric-box card-glass">
+          <div class="metric-header">
+            <h3>Duplicate Payment Prevention</h3>
+            <span class="badge badge-dup">Exact & Near Match</span>
+          </div>
+          <div class="scores-row">
+            <div class="score-item">
+              <div class="score-num" id="metricDupPrec">100.0%</div>
+              <div class="score-tag">Precision</div>
+            </div>
+            <div class="score-item">
+              <div class="score-num" id="metricDupRecall">100.0%</div>
+              <div class="score-tag">Recall</div>
+            </div>
+            <div class="score-item">
+              <div class="score-num" id="metricDupF1">1.000</div>
+              <div class="score-tag">F1 Score</div>
+            </div>
+          </div>
+          <div class="confusion-mini">
+            <div class="conf-cell">TP: <strong id="metricDupTP">2</strong></div>
+            <div class="conf-cell">FP: <strong id="metricDupFP">0</strong></div>
+            <div class="conf-cell">FN: <strong id="metricDupFN">0</strong></div>
+          </div>
+          <p class="metric-foot">Zero duplicate disbursements permitted; differentiated original legitimate invoice from subsequent duplicate copies.</p>
+        </div>
+
+        <!-- Operational Efficiency Card -->
+        <div class="metric-box card-glass">
+          <div class="metric-header">
+            <h3>Operational AP Efficiency</h3>
+            <span class="badge badge-success">Automation</span>
+          </div>
+          <div class="scores-row">
+            <div class="score-item">
+              <div class="score-num" id="metricAutoRate">89.3%</div>
+              <div class="score-tag">Auto-Resolved Rate</div>
+            </div>
+            <div class="score-item">
+              <div class="score-num" id="metricHoldRate">10.7%</div>
+              <div class="score-tag">Human Review Route</div>
+            </div>
+            <div class="score-item">
+              <div class="score-num" id="metricFPCount">0</div>
+              <div class="score-tag">False Positives</div>
+            </div>
+          </div>
+          <div class="citation-stat">
+            <span class="stat-label">Evidence Citation Density:</span>
+            <strong id="metricAvgCitations" class="stat-val">3.2 facts / flag</strong>
+          </div>
+          <p class="metric-foot">Every flagged decision is strictly grounded with cited facts. Refusal path gracefully handles missing POs and first-time vendors.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: FLAGSHIP STRUCTURING BREAKDOWN -->
+    <section id="tab-structuring" class="tab-content">
+      <div class="structuring-detail-card card-glass">
+        <div class="struct-header">
+          <div class="struct-title-row">
+            <span class="badge badge-fraud struct-badge">Flagship Defense Case</span>
+            <h2>Cross-Invoice Structuring (Smurfing) Analysis</h2>
+          </div>
+          <p class="struct-summary">
+            Structuring is an evasion technique where a supplier splits a large obligation across multiple separate sub-$10k invoices submitted within days of each other to evade mandatory dual-authorization or director-level approvals. <strong>Single-row classifiers miss this completely.</strong> Sentinel isolates the entire cluster across the batch.
+          </p>
+        </div>
+
+        <div class="structuring-visual-container">
+          <div class="cluster-summary-bar">
+            <div class="cluster-stat">
+              <span>Target Vendor</span>
+              <strong>Apex Security & Guarding LLC</strong>
+            </div>
+            <div class="cluster-stat">
+              <span>Combined Obligation</span>
+              <strong class="text-rose">$38,000.00</strong>
+            </div>
+            <div class="cluster-stat">
+              <span>Approval Threshold Evaded</span>
+              <strong>$10,000.00</strong>
+            </div>
+            <div class="cluster-stat">
+              <span>Submission Window</span>
+              <strong>3 Days (Aug 12 - Aug 14)</strong>
+            </div>
+            <div class="cluster-stat">
+              <span>PO Status</span>
+              <strong class="text-amber">No Approved POs</strong>
+            </div>
+          </div>
+
+          <div class="invoices-flow-grid" id="structuringFlowGrid">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- EVIDENCE DOSSIER MODAL -->
+  <div id="dossierModal" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <span class="modal-tag">EVIDENCE DOSSIER</span>
+          <h2 id="modalInvoiceId">INV-STRUC-101</h2>
+          <span class="modal-vendor-sub" id="modalVendorName">Apex Security & Guarding LLC</span>
+        </div>
+        <button class="modal-close" id="btnCloseModal">✕</button>
+      </div>
+
+      <div class="modal-body">
+        <!-- Verdict Summary Box -->
+        <div id="modalVerdictBox" class="dossier-verdict-banner">
+          <div class="verdict-main-row">
+            <div class="verdict-type-tag" id="modalVerdictTag">ESCALATE_FRAUD</div>
+            <div class="verdict-confidence" id="modalConfidence">Confidence: 99.0%</div>
+          </div>
+          <div class="verdict-reason" id="modalPrimaryReason">Reason details</div>
+          <div class="verdict-action" id="modalAction">Action recommendation</div>
+        </div>
+
+        <!-- Cited Evidence Breakdown -->
+        <div class="dossier-section">
+          <h4 class="section-heading">CITED EVIDENCE FACTS (ZERO HALLUCINATION)</h4>
+          <div id="modalCitedEvidenceList" class="cited-facts-grid">
+            <!-- Rendered cited facts -->
+          </div>
+        </div>
+
+        <!-- 5 Pillars of Evidence Grid -->
+        <div class="pillars-grid">
+          <!-- Pillar 1: PO Match -->
+          <div class="pillar-card">
+            <div class="pillar-title">1. Purchase Order Match</div>
+            <div id="pillarPO" class="pillar-content">--</div>
+          </div>
+
+          <!-- Pillar 2: Bank Fingerprint -->
+          <div class="pillar-card">
+            <div class="pillar-title">2. Bank Routing Fingerprint</div>
+            <div id="pillarBank" class="pillar-content">--</div>
+          </div>
+
+          <!-- Pillar 3: Duplicate Scan -->
+          <div class="pillar-card">
+            <div class="pillar-title">3. Batch Duplicate Scan</div>
+            <div id="pillarDup" class="pillar-content">--</div>
+          </div>
+
+          <!-- Pillar 4: Vendor History -->
+          <div class="pillar-card">
+            <div class="pillar-title">4. Vendor History Profile</div>
+            <div id="pillarVendor" class="pillar-content">--</div>
+          </div>
+
+          <!-- Pillar 5: Structuring Scan -->
+          <div class="pillar-card pillar-span-2">
+            <div class="pillar-title">5. Cross-Batch Structuring Cluster Analysis</div>
+            <div id="pillarStructuring" class="pillar-content">--</div>
+          </div>
+        </div>
+
+        <!-- Human Reviewer Override Panel -->
+        <div class="override-panel">
+          <h4>Human-in-the-Loop Override / AP Audit Note</h4>
+          <div class="override-controls">
+            <select id="overrideVerdictSelect" class="input-control">
+              <option value="auto_approve">Override to: Auto-Approve</option>
+              <option value="hold_for_review">Override to: Hold for Review</option>
+              <option value="escalate_fraud">Override to: Escalate (Fraud Risk)</option>
+              <option value="reject_duplicate">Override to: Reject (Duplicate)</option>
+            </select>
+            <input type="text" id="overrideNotes" placeholder="Reason for AP supervisor override..." class="input-control" />
+            <button id="btnSubmitOverride" class="btn btn-secondary">Apply Override</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
