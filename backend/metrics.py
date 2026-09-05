@@ -148,6 +148,16 @@ def compute_batch_scorecard(
     resolved_exc = len([e for e in exceptions_list if e.status == "RESOLVED"])
     exc_res_rate = round((resolved_exc / total_exc) * 100, 1) if total_exc > 0 else 100.0
 
+    # Straight-Through Processing (STP)
+    # Calculated strictly from actual invoice state transitions (auto-approved, 0 exceptions, 0 human intervention)
+    stp_count = 0
+    for inv in invoices:
+        v = verdict_map[inv.invoice_id]
+        has_unresolved_ex = any(e.invoice_id == inv.invoice_id and e.status != "RESOLVED" for e in exceptions_list)
+        if v.verdict == "auto_approve" and not has_unresolved_ex and not v.requires_human_review:
+            stp_count += 1
+    stp_rate = round((stp_count / total) * 100, 1)
+
     return BatchScorecard(
         total_invoices=total,
         auto_approved_count=auto_approved_count,
@@ -161,6 +171,9 @@ def compute_batch_scorecard(
         
         auto_resolved_pct=round((auto_resolved_count / total) * 100, 1),
         human_routing_pct=round((held_for_review_count / total) * 100, 1),
+
+        stp_count=stp_count,
+        stp_rate=stp_rate,
 
         reconciliation_match_rate=round((reconciliation_matched_count / total) * 100, 1),
         exception_rate=round((total_exc / total) * 100, 1),

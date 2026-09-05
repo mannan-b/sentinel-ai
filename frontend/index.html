@@ -72,9 +72,15 @@
     <!-- Top KPI Grid: Finance Control Center Summary -->
     <div class="kpi-grid">
       <div class="kpi-card card-total">
-        <div class="kpi-label">Batch Reconciled</div>
+        <div class="kpi-label">Batch Ingested</div>
         <div class="kpi-value" id="kpiTotal">75</div>
-        <div class="kpi-subtext" id="kpiMatchRate">86.7% 3-Way Match Rate</div>
+        <div class="kpi-subtext" id="kpiMatchRate">81.3% 3-Way Match Rate</div>
+      </div>
+      <div class="kpi-card card-approved">
+        <div class="kpi-icon-badge">⚡</div>
+        <div class="kpi-label">Straight-Through (STP)</div>
+        <div class="kpi-value" id="kpiSTPRate">64.0%</div>
+        <div class="kpi-subtext" id="kpiSTPCount">48 Invoices Auto-Cleared</div>
       </div>
       <div class="kpi-card card-approved">
         <div class="kpi-icon-badge">✓</div>
@@ -85,20 +91,20 @@
       <div class="kpi-card card-hold">
         <div class="kpi-icon-badge">!</div>
         <div class="kpi-label">Active Exceptions</div>
-        <div class="kpi-value" id="kpiExceptionsCount">18</div>
-        <div class="kpi-subtext" id="kpiBlockedAmount">$136,500 Held / Under Review</div>
+        <div class="kpi-value" id="kpiExceptionsCount">14</div>
+        <div class="kpi-subtext" id="kpiBlockedAmount">$77,320 Held / Under Review</div>
       </div>
       <div class="kpi-card card-fraud">
         <div class="kpi-icon-badge">⚠</div>
         <div class="kpi-label">Cash at Risk</div>
-        <div class="kpi-value" id="kpiCashAtRisk">$136,500</div>
+        <div class="kpi-value" id="kpiCashAtRisk">$77,320</div>
         <div class="kpi-subtext">Blocked Exposure / Fraud / BEC</div>
       </div>
       <div class="kpi-card card-duplicates">
         <div class="kpi-icon-badge">✕</div>
         <div class="kpi-label">Duplicate Prevented</div>
-        <div class="kpi-value" id="kpiDuplicatePrevented">$21,200</div>
-        <div class="kpi-subtext">2 Duplicate Resubmissions Halted</div>
+        <div class="kpi-value" id="kpiDuplicatePrevented">$6,700</div>
+        <div class="kpi-subtext">Duplicate Resubmissions Halted</div>
       </div>
     </div>
 
@@ -425,21 +431,30 @@
     <!-- TAB 6: AUDIT TRAIL LOG -->
     <section id="tab-audit" class="tab-content">
       <div class="table-container-card">
-        <div class="table-header-toolbar">
-          <h3 style="font-size: 1rem; color: #fff;">Immutable Forensic Audit Trail</h3>
-          <span class="subtext">Chronological record of all system, AI, and human controller events</span>
+        <div class="table-header-toolbar" style="display:flex; justify-content:space-between; align-items:center;">
+          <div>
+            <h3 style="font-size: 1rem; color: #fff; margin:0;">Tamper-Evident SHA-256 Cryptographic Audit Chain</h3>
+            <span class="subtext">Chronological sequence of all deterministic and AI actions cryptographically hashed</span>
+          </div>
+          <div style="display:flex; gap:10px; align-items:center;">
+            <span id="auditChainStatusBadge" class="badge badge-approved">✓ SHA-256 Chain Intact</span>
+            <button id="btnVerifyAuditChain" class="btn btn-secondary" style="font-size:0.75rem; padding:4px 10px;">
+              Verify Chain Integrity
+            </button>
+          </div>
         </div>
         <div class="table-responsive">
           <table class="sentinel-table">
             <thead>
               <tr>
-                <th width="160">Timestamp</th>
-                <th width="180">Action</th>
-                <th width="150">Actor</th>
-                <th width="150">Affected Record</th>
-                <th width="140">Previous State</th>
-                <th width="160">New State</th>
+                <th width="150">Timestamp</th>
+                <th width="160">Action</th>
+                <th width="130">Actor</th>
+                <th width="140">Affected Record</th>
+                <th width="120">Previous</th>
+                <th width="140">New State</th>
                 <th>Reason / Operational Justification</th>
+                <th width="120">Hash Link</th>
               </tr>
             </thead>
             <tbody id="auditTrailBody">
@@ -547,9 +562,19 @@
           </div>
         </div>
 
-        <!-- Human Reviewer Override Panel -->
+        <!-- Human Reviewer Override & Payment Release Panel -->
         <div class="override-panel">
-          <h4>Human Controller Override & Audit Logging</h4>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <h4 style="margin:0;">Human Controller Override & Payment Release Gate</h4>
+            <div style="display:flex; gap:8px;">
+              <button id="btnOpenWhyFromDossier" class="btn btn-secondary" style="font-size:0.75rem; padding:4px 10px;">
+                🔍 Why? Traceability
+              </button>
+              <button id="btnReleasePaymentFromDossier" class="btn btn-primary" style="font-size:0.75rem; padding:4px 12px; background:linear-gradient(135deg, #10b981, #059669);">
+                ⚡ Authorize & Release Payment
+              </button>
+            </div>
+          </div>
           <div class="override-controls">
             <select id="overrideVerdictSelect" class="input-control">
               <option value="auto_approve">Override to: Auto-Approve (Ready for Payment)</option>
@@ -560,6 +585,7 @@
             <input type="text" id="overrideNotes" placeholder="Required audit note for controller override..." class="input-control" />
             <button id="btnSubmitOverride" class="btn btn-secondary">Apply Override</button>
           </div>
+          <div id="paymentReleaseFeedback" class="hidden" style="margin-top:10px; padding:10px; border-radius:6px; font-size:0.8rem;"></div>
         </div>
       </div>
     </div>
@@ -567,7 +593,7 @@
 
   <!-- EXCEPTION ACTION MODAL -->
   <div id="exceptionModal" class="modal-backdrop hidden">
-    <div class="modal-card" style="max-width: 550px;">
+    <div class="modal-card" style="max-width: 580px;">
       <div class="modal-header">
         <div class="modal-title-group">
           <span class="modal-tag">EXCEPTION ACTION WORKBENCH</span>
@@ -580,18 +606,61 @@
         <div class="form-group">
           <label>Operational Resolution Action</label>
           <select id="exceptionActionSelect" class="input-control">
-            <option value="RESOLVED">Resolve & Release for Payment (Documentation Verified)</option>
+            <option value="RESOLVED">Resolve & Release for Payment (Documentation / GRN Verified)</option>
+            <option value="ATTACH_GRN">Attach Inbound Goods Receipt (GRN Dock Scan)</option>
             <option value="SHORT_PAY">Authorize Short-Pay Disbursement (Adjusted for Received Qty)</option>
-            <option value="ESCALATED">Escalate to Senior Controller / Audit</option>
+            <option value="ESCALATED">Escalate to Senior Controller / Internal Audit</option>
           </select>
+        </div>
+        <div class="form-group" id="grnInputGroup">
+          <label>Attach Verified Goods Receipt (GRN Reference)</label>
+          <input type="text" id="modalGrnReference" placeholder="e.g. GRN-9027 or leave blank to auto-generate" class="input-control" />
+        </div>
+        <div class="form-group" id="receivedQtyGroup">
+          <label>Confirmed Physical Received Quantity (EA)</label>
+          <input type="number" id="modalReceivedQty" placeholder="e.g. 50 (leave blank for full invoice quantity)" class="input-control" />
         </div>
         <div class="form-group">
           <label>Resolution Audit Note</label>
-          <input type="text" id="exceptionResolutionNotes" placeholder="e.g. Warehouse confirmed goods received on Dock B; GRN generated..." class="input-control" />
+          <input type="text" id="exceptionResolutionNotes" placeholder="e.g. Logistics dock confirmed receipt; GRN-9027 matched against PO..." class="input-control" />
         </div>
         <button id="btnSubmitExceptionResolution" class="btn btn-primary" style="width:100%; margin-top:12px;">
-          Submit Resolution with Audit Entry
+          Submit Resolution & Recalculate 3-Way Match
         </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- WHY TRACEABILITY MODAL -->
+  <div id="whyModal" class="modal-backdrop hidden">
+    <div class="modal-card" style="max-width: 650px;">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <span class="modal-tag">DECISION TRACEABILITY & SECURITY GATES</span>
+          <h2 id="whyModalTitle">Why is this decision made?</h2>
+        </div>
+        <button class="modal-close" id="btnCloseWhyModal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="whyModalSummary" style="font-size:0.95rem; font-weight:600; color:#f8fafc; padding:12px; background:rgba(255,255,255,0.04); border-radius:8px; border-left:4px solid #6366f1; margin-bottom:16px;">
+          --
+        </div>
+        <div class="dossier-section">
+          <h4 class="section-heading">PAYMENT GATEWAY STATUS & BLOCKING REASONS</h4>
+          <div id="whyBlockingReasons" style="margin-bottom:12px;">--</div>
+        </div>
+        <div class="dossier-section">
+          <h4 class="section-heading">3-WAY RECONCILIATION FINDINGS</h4>
+          <div id="whyReconcileFindings" style="margin-bottom:12px; font-size:0.84rem; color:#cbd5e1;">--</div>
+        </div>
+        <div class="dossier-section">
+          <h4 class="section-heading">DUPLICATE & FRAUD RISK CHECKS</h4>
+          <div id="whyFraudFindings" style="font-size:0.84rem; color:#cbd5e1;">--</div>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:16px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.1);">
+          <div id="whyCashAtRisk" style="font-family:'JetBrains Mono'; font-weight:700; color:#fb7185;">Cash at Risk: $0.00</div>
+          <div id="whyActionOwner" style="font-size:0.82rem; color:#818cf8;">Action Owner: AP_CLERK</div>
+        </div>
       </div>
     </div>
   </div>

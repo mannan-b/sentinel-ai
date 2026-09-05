@@ -1,20 +1,29 @@
-# 🛡️ Sentinel AP Agent: Deep Architecture, System Specification & AI Reviewer Dossier
+# 🛡️ Sentinel AI Finance Controller: Deep Architecture, System Specification & Improvement Blueprint
 
-> **Document Purpose**: This document provides a rigorous, component-by-component architectural specification of the **Sentinel AP Fraud & Duplicate-Payment Control Agent**. It is explicitly formatted to enable an external AI model or senior software architect to evaluate the codebase, identify architectural bottlenecks, discover edge cases, and propose high-impact improvements across backend engineering, machine learning/LLM integration, financial forensic algorithms, and frontend interactivity.
+> **Document Purpose**: This document provides a rigorous, component-by-component architectural specification of the **Sentinel AI Finance Controller**. It details how the system closes the complete finance-operations loop:
+> 
+> $$\text{INGEST} \longrightarrow \text{RECONCILE (3-Way)} \longrightarrow \text{EXPLAIN} \longrightarrow \text{RESOLVE / ESCALATE} \longrightarrow \text{PAYMENT QUEUE} \longrightarrow \text{CASH POSITION} \longrightarrow \text{MEASURE}$$
+> 
+> It is explicitly formatted to enable external AI models, software architects, and enterprise finance engineers to evaluate the system, verify forensic algorithms, understand state transitions, and build enterprise extensions.
 
 ---
 
 ## 1. Executive Summary & Problem Domain
 
 ### 1.1 The Enterprise Problem
-Enterprise Accounts Payable (AP) departments process thousands of supplier invoices monthly. Traditional Rule-Based Workflow Automation (RPA) and standard optical character recognition (OCR) systems suffer from two fatal failure modes:
-1. **Isolated Single-Invoice Classification (Local Context Blindness)**: Scanners evaluate each invoice row in a vacuum. They fail to detect multi-invoice patterns such as **structuring (smurfing)**—where a dishonest supplier splits a $40,000 project into four $9,500 bills over 72 hours to bypass dual-signoff thresholds.
-2. **Black-Box Probabilistic Guessing**: Traditional ML models produce bare confidence scores (e.g., `Risk: 0.82`) without checkable evidence, causing high false-positive alert fatigue or premature rejection of legitimate vendor relationships.
+Enterprise Accounts Payable (AP) departments process thousands of supplier invoices monthly. Traditional Rule-Based Workflow Automation (RPA) and standard optical character recognition (OCR) systems suffer from three fatal failure modes:
+1. **Isolated Single-Invoice Classification (Local Context Blindness)**: Scanners evaluate each invoice row in a vacuum. They fail to detect multi-invoice patterns such as **structuring (smurfing)**—where a supplier splits a $40,000 obligation into multiple sub-$10,000 bills to bypass dual-signoff thresholds.
+2. **Missing Operational Closed-Loop**: Most tools stop at "Exception detected." They fail to route issues to appropriate operational owners, estimate cash exposure, forecast forward payables outflow, or maintain an immutable audit trail.
+3. **Black-Box Probabilistic Hallucination**: Pure LLM solutions perform arithmetic unreliably, invent financial discrepancies, or fail to substantiate claims with checkable forensic evidence.
 
 ### 1.2 The Sentinel Thesis
-Sentinel replaces isolated scoring with a **two-tier forensic pipeline**:
-- **Tier 1 (Deterministic Zero-Hallucination Evidence Layer)**: Gathers mathematical, temporal, relational, and batch-level cross-record facts into a typed `EvidenceDossier`.
-- **Tier 2 (Evidence-Grounded Verdict Layer)**: Synthesizes the dossier into one of four auditable actions (`auto_approve`, `hold_for_review`, `escalate_fraud`, `reject_duplicate`), mandating explicit **evidence citations** for every non-approval action.
+Sentinel replaces isolated scoring with a **deterministic evidence-grounded AI Finance Controller**:
+- **Layer 1 (Deterministic Zero-Hallucination Evidence Layer)**: Performs rigorous mathematical comparisons for 3-Way Reconciliation ($\text{Invoice} \leftrightarrow \text{Purchase Order} \leftrightarrow \text{Goods Receipt Note}$), Two-Stage Hybrid Duplicate Scanning, BEC Bank Change detection, and Structuring Matrices without LLM arithmetic.
+- **Layer 2 (Evidence-Grounded AI Controller & Citation Layer)**: Synthesizes deterministic evidence into structured controller decisions (`auto_approve`, `hold_for_review`, `escalate_fraud`, `reject_duplicate`), citing precise forensic facts and recommending next operational actions while enforcing strict refusal-to-guess protocols.
+- **Layer 3 (Exception Resolution & Operational Lifecycle)**: Generates prioritized exceptions ($0-100$ priority score), assigns operational owners (`AP_CLERK`, `PROCUREMENT_BUYER`, `CONTROLLER`, `INTERNAL_AUDIT`), aggregates related issues, and surfaces historical resolution memory.
+- **Layer 4 (Payment Queue & AP Cash Outflow Forecast)**: Calculates forward-looking cash outflow ($7\text{d}, 14\text{d}, 30\text{d}$) broken down into Approved Outflow, Held Outflow, High-Risk Outflow, and Cash at Risk.
+- **Layer 5 (BEC Dual-Control Gate & Governance)**: Enforces an interactive 4-point verification checklist before releasing payments on altered bank accounts.
+- **Layer 6 (Audit Trail & Evaluation Scorecard)**: Maintains an immutable event ledger and calculates operational metrics (Match Rate, Exception Rate, Auto-Resolution Rate, F1, FPR, and Value Prevented).
 
 ---
 
@@ -22,61 +31,78 @@ Sentinel replaces isolated scoring with a **two-tier forensic pipeline**:
 
 ```
                                   [Inbound AP Invoice Batch]
-                                             │
-                                             ▼
-                             ┌───────────────────────────────┐
-                             │    Synthetic Data Generator   │
-                             │     (backend/generator.py)    │
-                             └───────────────┬───────────────┘
-                                             │
-                                             ▼
+                                              │
+                                              ▼
+                              ┌───────────────────────────────┐
+                              │    Synthetic Data Generator   │
+                              │     (backend/generator.py)    │
+                              │  Invoices + POs + Dock GRNs   │
+                              └───────────────┬───────────────┘
+                                              │
+                                              ▼
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
-│ TIER 1: DETERMINISTIC EVIDENCE ENGINE (backend/evidence.py)                            │
+│ LAYER 1: DETERMINISTIC FORENSIC & RECONCILIATION ENGINE (backend/evidence.py)         │
 │                                                                                        │
-│  ┌────────────────────┐ ┌────────────────────┐ ┌────────────────────┐ ┌──────────────┐ │
-│  │ 1. PO Match &      │ │ 2. Bank Routing &  │ │ 3. Duplicate Scan  │ │ 4. Vendor    │ │
-│  │    Tolerance (±5%) │ │    Fingerprint BEC │ │    (Exact / Near)  │ │    Profile   │ │
-│  └─────────┬──────────┘ └─────────┬──────────┘ └─────────┬──────────┘ └──────┬───────┘ │
-│            │                      │                      │                   │         │
-│            └──────────────────────┼──────────────────────┴───────────────────┘         │
-│                                   │                                                    │
-│                                   ▼                                                    │
-│               ┌──────────────────────────────────────────────┐                         │
-│               │ 5. Cross-Batch Structuring (Smurfing) Matrix │                         │
-│               └───────────────────┬──────────────────────────┘                         │
-│                                   │                                                    │
-│                                   ▼                                                    │
-│                      [Structured EvidenceDossier]                                      │
-└───────────────────────────────────┬────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
+│  ┌───────────────────────┐ ┌───────────────────────┐ ┌───────────────────────────────┐ │
+│  │ 1. 3-Way Match        │ │ 2. Bank Routing &     │ │ 3. Two-Stage Hybrid Duplicate │ │
+│  │    Invoice ↔ PO ↔ GRN │ │    BEC Fingerprint    │ │    Candidate Gen + Similarity │ │
+│  │    (Qty, Price, Dock) │ │    Cooling Period     │ │    (Inv, Vendor, Amt, Date)   │ │
+│  └───────────┬───────────┘ └───────────┬───────────┘ └───────────────┬───────────────┘ │
+│              │                         │                             │                 │
+│              └─────────────────────────┼─────────────────────────────┘                 │
+│                                        │                                               │
+│                                        ▼                                               │
+│                    ┌────────────────────────────────────────┐                          │
+│                    │ 4. Cross-Batch Structuring Matrix      │                          │
+│                    │ 5. Shared Bank Account Collusion Scan  │                          │
+│                    └───────────────────┬────────────────────┘                          │
+│                                        │                                               │
+│                                        ▼                                               │
+│                           [Typed EvidenceDossier]                                      │
+└────────────────────────────────────────┬───────────────────────────────────────────────┘
+                                         │
+                                         ▼
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
-│ TIER 2: VERDICT & CITATION ENGINE (backend/agent.py)                                   │
+│ LAYER 2: EVIDENCE-GROUNDED AI CONTROLLER & CITATION ENGINE (backend/agent.py)          │
 │                                                                                        │
 │   • Structured Reasoning & Citation Formatter                                          │
-│   • Multi-Class Verdict Evaluator (Approve / Hold / Escalate / Reject)                 │
-│   • Explicit Refusal Protocol (Refuses to guess on thin/conflicting evidence)          │
-└───────────────────────────────────┬────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
+│   • Controller Action Synthesizer (verdict, primary_reason, cited_evidence, next_step) │
+│   • Explicit Refusal Protocol (Refuses to guess on thin / conflicting evidence)        │
+└────────────────────────────────────────┬───────────────────────────────────────────────┘
+                                         │
+                                         ▼
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
-│ TIER 3: EVALUATION & OPERATIONAL METRICS (backend/metrics.py)                          │
+│ LAYER 3: FINANCE OPERATIONS CONTROLLER & RESOLUTION ENGINE (backend/controller.py)     │
 │                                                                                        │
-│   • Ground Truth Confusion Matrices (Fraud & Duplicate Classes)                        │
-│   • Automation / Auto-Resolution vs Human Review Routing Rate                         │
-│   • False Positive Cost Impact on Legitimate Suppliers                                 │
-│   • Evidence Citation Density (Avg facts / non-approval action)                        │
-└───────────────────────────────────┬────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
+│   • Exception Lifecycle (OPEN → AI_RECOMMENDED → HUMAN_REVIEW → RESOLVED / ESCALATED) │
+│   • Deterministic Prioritization Scoring (0 - 100) & Operational Owner Assignment      │
+│   • Operational Issue Aggregation (Groups multi-invoice vendor anomalies)             │
+│   • Synthetic Historical Resolution Pattern Memory                                     │
+│   • BEC Dual-Control Payment Release Gate (4-Point Verification Checklist)             │
+│   • Forward AP Cash Outflow Forecast (0-7d, 8-14d, 15-30d, 30+d / Cash at Risk)       │
+└────────────────────────────────────────┬───────────────────────────────────────────────┘
+                                         │
+                                         ▼
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
-│ PRESENTATION & CONTROL PLANE (FastAPI backend/server.py + frontend/)                   │
+│ LAYER 4: IMMUTABLE AUDIT TRAIL & EVALUATION METRICS (backend/audit.py, metrics.py)     │
 │                                                                                        │
-│   • Real-Time Batch Runner & Ingestion Visualizer                                      │
-│   • Results Dashboard with Filterable Table & Inline Fact Pills                        │
-│   • Flagship Structuring Investigation Banner & Timeline Flow                          │
-│   • Interactive 5-Pillar Evidence Modal with Human-in-the-Loop Override                │
-│   • Metrics & Forensic Scoring Lab                                                     │
+│   • Centralized Immutable Event Ledger (Batch Ingestion, Decisions, Overrides, BEC)   │
+│   • Operational KPIs: Match Rate, Exception Rate, Auto-Resolution vs Human Review Rate │
+│   • Financial Risk Totals: Cash at Risk, Duplicate Prevented, Fraud Escalated          │
+│   • Forensic Quality: Precision, Recall, F1, False Positive Rate, Citation Density     │
+└────────────────────────────────────────┬───────────────────────────────────────────────┘
+                                         │
+                                         ▼
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│ PRESENTATION & CONTROL CENTER (FastAPI backend/server.py + frontend/)                  │
+│                                                                                        │
+│   • Finance Control Center KPI Bar & Cash Outflow Forecast Cards                       │
+│   • Filterable Invoices & 3-Way Reconciliation Status Grid with Inline Fact Badges     │
+│   • Exception Resolution Workbench (Grouped Tickets, One-Click Modal Resolution)       │
+│   • Payment Queue & AP Cash Maturity Schedule                                          │
+│   • BEC Dual-Control Verification Modal & Release Workflow                             │
+│   • Configurable Control Policy Drawer (PO Tolerance, Duplicate Thresh, Cooling Days)  │
+│   • Immutable Audit Trail Timeline Stream                                              │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -86,157 +112,187 @@ Sentinel replaces isolated scoring with a **two-tier forensic pipeline**:
 
 ### 3.1 Data Models & Schemas (`backend/models.py`)
 
-The system relies on strict Pydantic v2 schemas:
+The system uses strict Pydantic v2 schemas across all operational layers:
 
-1. **`Invoice`**:
-   - `invoice_id`: String unique identifier.
-   - `vendor_name`, `vendor_id`: Foreign key reference to master vendor data.
-   - `amount`: Float currency value.
-   - `po_reference`: Optional string reference to purchase order.
-   - `vendor_bank_fingerprint`: Hash/token representing the remittance bank account & routing number.
-   - `invoice_date`, `submission_date`: ISO-8601 date strings (`YYYY-MM-DD`).
-   - `ground_truth_label`: Hidden enum (`legitimate`, `duplicate`, `fraud_risk`, `needs_review`) used strictly in `metrics.py` for audit scorecard generation. Never exposed to the verdict agent.
+1. **`LineItem`**:
+   - `line_id`: Unique identifier (`LINE-001`).
+   - `description`: Goods/services description.
+   - `quantity`: Float billed or received.
+   - `unit_price`: Unit monetary rate.
+   - `total_price`: Calculated total ($Q \times P$).
 
-2. **`EvidenceDossier`**:
-   - `po_evidence`: Status (`EXACT_MATCH`, `WITHIN_TOLERANCE`, `AMOUNT_EXCEEDED`, `NO_PO_REFERENCED`, `INVALID_PO_REFERENCE`), delta percentage, approved amount vs billed amount.
-   - `bank_evidence`: Master fingerprint vs submitted, `days_since_account_change`, risk level (`NORMAL`, `HIGH_RISK_RECENT_CHANGE`, `FIRST_TIME_VENDOR_UNVERIFIED`).
-   - `duplicate_evidence`: `exact_duplicate_found`, `near_duplicate_found`, similarity score, list of `DuplicateCandidate` objects with candidate IDs and date differences.
-   - `vendor_history_evidence`: Historical transaction count, historical average amount, ratio of current invoice to average, first-time large invoice flag.
-   - `structuring_evidence`: `in_structuring_cluster` (Boolean), `cluster_invoice_ids` (List[str]), `cluster_total_amount`, individual amounts, threshold limit ($10,000.00), and window span in days.
+2. **`PurchaseOrder`**:
+   - `po_id`: Unique PO identifier (`PO-7001`).
+   - `vendor_id`, `vendor_name`: Supplier references.
+   - `total_amount`: Approved spending ceiling.
+   - `currency`: Default `USD`.
+   - `line_items`: Approved line item details.
+   - `created_date`, `status`: Status (`APPROVED`, `CLOSED`, etc.).
 
-3. **`AgentVerdict`**:
-   - `verdict`: `auto_approve` | `hold_for_review` | `escalate_fraud` | `reject_duplicate`.
-   - `confidence`: Float between 0.0 and 1.0.
-   - `cited_evidence`: List of `CitedEvidenceItem` records containing `field_path`, `observed_value`, and `significance`.
-   - `primary_reason`: Human-readable forensic finding.
-   - `recommended_action`: Prescriptive AP remediation step.
+3. **`GoodsReceipt` (GRN)**:
+   - `grn_id`: Receiving dock note ID (`GRN-9001`).
+   - `po_reference`: Target purchase order.
+   - `vendor_id`: Supplier reference.
+   - `received_date`: Dock intake date.
+   - `received_by`: Receiving dock agent name.
+   - `line_items`: Actual physical count and condition received.
+   - `status`: Dock status (`COMPLETE`, `PARTIAL`, `DAMAGED`).
+
+4. **`Invoice`**:
+   - `invoice_id`, `vendor_name`, `vendor_id`, `amount`, `po_reference`, `vendor_bank_fingerprint`, `invoice_date`, `submission_date`.
+   - `line_items`: Invoiced line details.
+   - `due_date`, `payment_terms` (`NET_15`, `NET_30`, `NET_60`, `IMMEDIATE`).
+   - `payment_status`: `READY_FOR_PAYMENT`, `AWAITING_REVIEW`, `PAYMENT_HOLD`, `DUPLICATE_REJECTED`, `BLOCKED_BY_RECONCILIATION`, `RELEASED`.
+   - `approval_status`: `PENDING`, `AUTO_APPROVED`, `HELD`, `ESCALATED`, `REJECTED`, `RESOLVED`.
+   - `ground_truth_label`: Hidden evaluation label (`legitimate`, `duplicate`, `fraud_risk`, `needs_review`).
+
+5. **`ReceiptEvidence` (3-Way Match)**:
+   - `receipt_status`: `EXACT_3WAY_MATCH`, `WITHIN_TOLERANCE`, `QUANTITY_OVERBILLED`, `PRICE_MISMATCH`, `MISSING_GRN`, `PARTIAL_RECEIPT`, `EXTRA_LINE_ITEM`, `NO_PO_OR_RECEIPT`.
+   - `invoiced_quantity`, `received_quantity`, `po_quantity`.
+   - `invoiced_unit_price`, `po_unit_price`.
+   - `quantity_delta`, `price_delta`, `discrepancy_amount`.
+
+6. **`FinanceException` & `ExceptionGroup`**:
+   - `exception_id`, `invoice_id`, `exception_type`, `severity` (`LOW`, `MEDIUM`, `HIGH`, `CRITICAL`), `financial_impact`, `priority_score` ($0-100$).
+   - `suggested_owner`: `AP_CLERK`, `PROCUREMENT_BUYER`, `CONTROLLER`, `INTERNAL_AUDIT`.
+   - `status`: `OPEN`, `AI_RECOMMENDED`, `HUMAN_REVIEW`, `RESOLVED`, `ESCALATED`.
+   - `resolution_history`: Historical resolution statistics for identical anomaly types.
+
+7. **`BankChangeAlert`**:
+   - `vendor_id`, `old_fingerprint`, `new_fingerprint`, `days_since_change`, `affected_invoices`, `affected_payment_value`, `risk_severity`.
+   - `controls`: Verification state for `independent_phone_verified`, `cfo_signoff`, `account_ownership_verified`, and `cooling_period_elapsed`.
+
+8. **`CashPositionSummary` & `CashOutflowBucket`**:
+   - Outflow buckets for $0-7\text{d}$, $8-14\text{d}$, $15-30\text{d}$, and $30+\text{d}$.
+   - Breakdowns for `expected_outflow`, `approved_outflow`, `held_outflow`, `high_risk_outflow`, and `cash_at_risk`.
+
+9. **`FinanceControlPolicy`**:
+   - Configurable parameters: `po_tolerance_pct` (default $5.0\%$), `receipt_tolerance_pct` ($0.0\%$), `duplicate_similarity_threshold` ($0.85$), `bank_change_cooling_days` ($30$), `high_risk_amount_threshold` ($\$10,000.00$), `auto_resolve_minor_discrepancies` (`True`).
+
+10. **`AuditEvent`**:
+    - `event_id`, `timestamp`, `action`, `actor`, `affected_record`, `previous_state`, `new_state`, `reason`.
 
 ---
 
-### 3.2 Synthetic Data Generator (`backend/generator.py`)
+### 3.2 Deterministic Forensic & Reconciliation Engine (`backend/evidence.py`)
 
-A deterministic generator parameterized by `seed` and `total_invoices` (50–100 records). It deliberately creates a realistic distribution:
+All mathematical and rule evaluations occur outside the LLM:
 
-- **Clean Baseline (~75%+)**: Legitimate invoices from established vendors matching active POs within 0–2% variance and matching bank fingerprints.
-- **Engineered Forensic Attacks & Anomalies**:
-  1. **Cross-Batch Structuring (Smurfing)**: *Apex Security & Guarding LLC* splits a $38,000 obligation into 4 un-PO'd invoices of $9,500 each within a 3-day window to evade the $10,000 threshold.
-  2. **Business Email Compromise (BEC) / Bank Account Takeover**: *CyberShield Defense Corp* invoice where the bank routing fingerprint was changed 2 days prior to submission.
-  3. **First-Time Vendor Outlier**: Unknown vendor *Titanium Cybernetic Global Inc* submitting a $48,750 un-PO'd invoice with zero historical relationship.
-  4. **Exact Duplicate Resubmission**: *CloudScale Infrastructure LLC* invoice resubmitted 4 days later with identical billing parameters.
-  5. **Near Duplicate**: *Metro Logistics & Freight* invoice with identical amount ($6,700) and vendor submitted within a 2-day window with modified invoice ID.
-  6. **Orphan / Missing PO Invoices**: Established vendors submitting bills with null or non-existent PO numbers.
-  7. **PO Variance Violation**: Invoice exceeding approved PO by +35% (violating the 5% policy tolerance limit).
+1. **Deterministic 3-Way Reconciliation**:
+   - Matches Invoice against active PO and dock Goods Receipt (GRN).
+   - Identifies:
+     - Missing GRN dock receipts.
+     - Partial deliveries ($\text{Qty}_{\text{Invoiced}} > \text{Qty}_{\text{Received}}$).
+     - Overbilling against PO ($\text{Qty}_{\text{Invoiced}} > \text{Qty}_{\text{PO}}$).
+     - Price markups ($\text{Unit Price}_{\text{Invoiced}} > \text{Unit Price}_{\text{PO}}$).
+     - Unauthorized extra line items not present on approved POs.
+     - Multiple invoices exhausting single PO balances.
 
----
+2. **Two-Stage Hybrid Duplicate Engine**:
+   - **Stage 1 (Candidate Generation Filter)**: Quickly identifies pairs with matching vendor IDs and near-match amounts within a 45-day window.
+   - **Stage 2 (Weighted Similarity Function)**:
+     $$\text{Score} = 0.25 \cdot S_{\text{inv\_no}} + 0.30 \cdot S_{\text{vendor}} + 0.25 \cdot S_{\text{amount}} + 0.10 \cdot S_{\text{date}} + 0.10 \cdot S_{\text{desc}}$$
+   - **Distinct PO Protection Rule**: Invoices referencing distinct, valid PO numbers are protected from false-positive duplicate penalties.
 
-### 3.3 Deterministic Evidence Gathering Layer (`backend/evidence.py`)
-
-The evidence layer executes non-probabilistic checks across 5 forensic dimensions:
-
-1. **PO Tolerance Check**:
-   $$\Delta\% = \frac{\text{Invoice Amount} - \text{PO Amount}}{\text{PO Amount}} \times 100$$
-   - If $|\Delta\%| \le 0.001\% \rightarrow \text{EXACT\_MATCH}$
-   - If $0 < \Delta\% \le 5.0\% \rightarrow \text{WITHIN\_TOLERANCE}$
-   - If $\Delta\% > 5.0\% \rightarrow \text{AMOUNT\_EXCEEDED}$
-   - If PO reference missing $\rightarrow \text{NO\_PO\_REFERENCED}$
-   - If PO reference not in registry $\rightarrow \text{INVALID\_PO\_REFERENCE}$
-
-2. **Bank Account Fingerprint Verification**:
-   - Compares invoice fingerprint against vendor master record.
-   - Checks if account was updated within the last 30 days (`days_since_account_change \le 30`).
-   - Flags `HIGH_RISK_RECENT_CHANGE` if mismatched or recently altered.
-
-3. **Batch-Level Duplicate Collision Scanning**:
-   - Compares every invoice against all other records in the batch.
-   - Chronological ordering logic: Distinguishes predecessor (original) from subsequent duplicate copies using `submission_date` and ID suffixes (`-DUP`, `-B`).
-   - Computes similarity decay over temporal distance: $\text{Score} = 0.90 - (\text{days\_diff} \times 0.02)$.
+3. **BEC Bank Account Fingerprint & Collusion Scan**:
+   - Validates invoice remittance fingerprint against vendor master.
+   - Enforces configurable cooling-off period (e.g. 30 days).
+   - Detects **shared-bank collusion**: Flags unrelated vendors sharing the same bank routing fingerprint.
 
 4. **Cross-Batch Structuring (Smurfing) Scan**:
-   - Groups invoices by vendor across the entire batch.
-   - Filters for invoices within the sub-threshold risk band: $\$8,000.00 \le \text{Amount} < \$10,000.00$ without pre-approved POs.
-   - If $\ge 3$ invoices exist within a $\le 5\text{-day}$ window:
-     - Tags all participating invoices as an active structuring cluster.
-     - Calculates combined obligation ($\sum \text{Amounts}$).
-     - Creates structured cluster evidence attached to all constituent invoices.
+   - Detects $\ge 3$ un-PO'd invoices from the same supplier within 5 days in the $\$8,000 - \$10,000$ band, linking them into an investigation cluster.
 
 ---
 
-### 3.4 Verdict & Citation Layer (`backend/agent.py`)
+### 3.3 AI Controller & Citation Synthesis (`backend/agent.py`)
 
-Renders auditable verdicts using an explicit rubric:
-
-| Condition | Verdict | Required Citations |
-| :--- | :--- | :--- |
-| `structuring_evidence.in_structuring_cluster == True` | `escalate_fraud` | Cluster count, individual amounts, combined sum, evaded threshold |
-| `bank_evidence.risk_level == 'HIGH_RISK_RECENT_CHANGE'` | `escalate_fraud` | Submitted fingerprint, master fingerprint, days since change |
-| `duplicate_evidence.is_duplicate_risk == True` | `reject_duplicate` | Matched invoice ID, similarity score, match type |
-| First-time vendor with amount > $10,000 & no PO | `hold_for_review` | First-time flag, invoice amount, PO status |
-| PO amount exceeded > 5% tolerance | `hold_for_review` | PO approved amount, invoice amount, $\Delta\%$ variance |
-| Missing or invalid PO on established vendor | `hold_for_review` | PO status, submitted reference |
-| All checks clean (3-way match, verified bank, no duplicates) | `auto_approve` | Clean PO match status, verified bank status, 0 duplicate flags |
+Synthesizes deterministic evidence into structured controller decisions:
+- Mandatory structured JSON schema: `verdict`, `confidence`, `primary_reason`, `cited_evidence`, `recommended_action`, `next_best_action`, `requires_human_review`.
+- **Refusal to Guess**: If deterministic evidence is missing, conflicting, or thin, the agent strictly outputs `requires_human_review = True` and refuses to guess.
+- Does not perform financial arithmetic; all numbers, variances, and percentages are derived directly from the deterministic dossier.
 
 ---
 
-### 3.5 Scoring & Evaluation Metrics (`backend/metrics.py`)
+### 3.4 Finance Operations Controller (`backend/controller.py`)
 
-Evaluates performance against hidden ground truth labels:
-- **Binary Metrics per Class (Fraud & Duplicates)**:
-  $$\text{Precision} = \frac{TP}{TP + FP}, \quad \text{Recall} = \frac{TP}{TP + FN}, \quad F_1 = 2 \cdot \frac{\text{Precision} \cdot \text{Recall}}{\text{Precision} + \text{Recall}}$$
-- **False Positive Rate on Legitimate Vendors**:
-  $$\text{FPR}_{\text{legit}} = \frac{\text{Clean Invoices Flagged as Fraud/Reject}}{\text{Total Invoices}}$$
-- **Auto-Resolution Rate vs Human Routing**:
-  $$\text{Auto-Resolved } \% = \frac{\text{Approved} + \text{Duplicates Rejected} + \text{Fraud Escalated}}{\text{Total Invoices}} \times 100$$
-- **Evidence Citation Density**: Average number of cited facts per non-approval decision.
-
----
-
-## 4. Current Constraints & Architectural Simplifications
-
-To prepare an external AI model to suggest meaningful improvements, here is a transparent inventory of current architectural simplifications:
-
-1. **In-Memory Batch State**: `BatchState` in `backend/server.py` stores batch data in Python process memory. A server restart resets dynamic state (though deterministic seed generation maintains reproducibility).
-2. **Synchronous Single-Process Execution**: Evidence extraction and verdict generation run synchronously in the FastAPI request-response cycle.
-3. **Regex/Heuristic Similarity for Duplicates**: Duplicate detection uses exact vendor ID match + amount match + date window heuristics rather than semantic NLP/embeddings on line-item descriptions.
-4. **Static Hardcoded Thresholds**: Approval threshold ($10,000.00) and PO tolerance (5%) are hardcoded constants rather than configurable tenant-level policy rules.
-5. **Simulated Vendor Master Database**: Master vendor and PO records are generated alongside the batch rather than queried from an external SQL/ERP system (e.g., SAP, NetSuite, QuickBooks).
+1. **Exception Prioritization Formula**:
+   $$\text{Priority} = \min(100, \text{Base Severity} + \text{Impact Factor} + \text{Fraud Boost} + \text{Vendor Risk})$$
+2. **Operational Ownership Assignment**:
+   - 3-Way & Delivery Discrepancies $\rightarrow$ `PROCUREMENT_BUYER`
+   - PO Variances & Duplicate Invoices $\rightarrow$ `AP_CLERK`
+   - High-Value Holds & Cash Policy Violations $\rightarrow$ `CONTROLLER`
+   - Structuring & BEC Bank Changes $\rightarrow$ `INTERNAL_AUDIT`
+3. **Operational Issue Aggregation**: Groups multi-invoice anomalies by vendor and type (e.g., 4 structuring invoices consolidated into 1 operational ticket).
+4. **Historical Resolution Reference**: Computes resolution trends from synthetic historical cases to recommend auto-resolution or escalation paths.
+5. **Cash Position Forecasting**: Slices payables into maturity buckets and computes approved vs held exposure.
+6. **BEC Dual-Control Payment Release Gate**: Automatically applies `PAYMENT_HOLD` and verifies 4 required controls before payment transition.
 
 ---
 
-## 5. High-Impact Vectors for Improvement (Prompt Guide for Reviewer AI)
+### 3.5 Centralized Audit Trail (`backend/audit.py`)
 
-When asking another AI model to review or improve this project, prompt it to focus on the following high-value architectural vectors:
-
-### Vector A: Advanced Multi-Agent Orchestration & Real LLM Integration
-- How can we implement an asynchronous **LangGraph / CrewAI / DSPy** multi-agent pipeline where specialized sub-agents (e.g., *Contract Compliance Agent*, *Forensic Entity Resolver*, *Tax & Sanction Screener*) perform parallel reasoning?
-- How should we implement prompt caching, fallback retry circuits, and structured output parsing (Pydantic Output Parser) with streaming responses via Server-Sent Events (SSE)?
-
-### Vector B: Vector Embeddings & Fuzzy Semantic Duplicate Detection
-- Instead of simple amount + date window matching, how can we integrate sentence transformers (e.g., `all-MiniLM-L6-v2`) and vector search (e.g., FAISS or pgvector) to detect semantic near-duplicates where invoice descriptions and line-items are paraphrased (e.g., "Monthly cloud compute hosting" vs "Aug 2026 AWS hosting infrastructure charges")?
-
-### Vector C: Graph-Based Entity Resolution & Network Fraud Analysis
-- How can we model vendors, bank account fingerprints, tax IDs, physical addresses, and invoice submitters as an in-memory knowledge graph (e.g., NetworkX or Neo4j) to detect **vendor collusion rings** (e.g., different vendor names sharing the same bank routing number or phone number)?
-
-### Vector D: Production Database & Multi-Tenant AP Policy Engine
-- How can we refactor `models.py` into SQLAlchemy / PostgreSQL models with Alembic migrations, database pooling, and dynamic tenant policy configuration (e.g., customizable per-department approval limits, tolerance bands, and dual-authorization workflows)?
-
-### Vector E: Multimodal Document Ingestion (OCR & LayoutLM)
-- How can we add a file upload endpoint for PDF/image invoices that extracts structured key-value pairs using multimodal models (Gemini Flash Vision / LayoutLMv3) before passing them into the Sentinel Evidence Engine?
+Maintains an in-memory chronological event log tracking:
+- `BATCH_INGESTED`
+- `CONTROL_PIPELINE_EXECUTED`
+- `EXCEPTION_RESOLVED`
+- `BANK_CONTROL_UPDATED`
+- `VERDICT_OVERRIDE`
+- `POLICY_UPDATED`
 
 ---
 
-## 6. How to Run & Verify
+## 4. Synthetic Data Generation: 15 Core Scenarios (`backend/generator.py`)
+
+The dataset generator produces 75 realistic records with balanced distributions:
+1. **Clean 3-Way Matches**: Legitimate invoices matching PO lines and dock GRNs.
+2. **Partial Goods Receipt**: Invoiced 50 units, dock received 25 units.
+3. **Quantity Overbilled vs PO**: Invoiced 120 units against a 100-unit PO.
+4. **Unit Price Markup**: Invoiced at $275.00/unit against approved $220.00/unit PO.
+5. **Missing Goods Receipt (GRN)**: High-value physical goods invoiced with no dock scan.
+6. **Extra Unapproved Line Item**: Invoice contains unapproved ancillary service charge.
+7. **Multiple Invoices on Same PO**: Two distinct bills exhausting the same PO line.
+8. **Business Email Compromise (BEC)**: Vendor bank fingerprint updated 2 days prior.
+9. **Cross-Batch Structuring (Smurfing)**: 4 invoices of $9,500 each over 3 days ($38,000 total).
+10. **Exact Duplicate Resubmission**: Same invoice submitted twice 4 days apart.
+11. **Near Duplicate with Modified Number**: Same billing amount and vendor with altered ID.
+12. **Shared Bank Account Collusion**: Multiple vendors sharing the same routing account.
+13. **First-Time Unverified Vendor**: High-value invoice with no historical transactions.
+14. **Overdue Invoices & Cash Exposure**: Invoices past due date impacting current cash position.
+15. **Legitimate Recurring Bills with Distinct POs**: Monthly SaaS subscriptions sharing amounts but on distinct POs.
+
+---
+
+## 5. How to Run & Verify
 
 ```bash
 # 1. Install dependencies
-pip install fastapi uvicorn pydantic tabulate pytest
+pip install fastapi uvicorn pydantic pytest tabulate
 
-# 2. Run automated verification test suite
-python tests/test_pipeline.py
+# 2. Run automated test suite
+python -m pytest tests/ -v
 
-# 3. Inspect dataset & evaluate metrics via CLI
+# 3. Test synthetic generation & control metrics via CLI
 python seed_data.py --seed 42 --size 75
 
-# 4. Launch web application
+# 4. Start the interactive Finance Control Center
 python run.py
 # Access dashboard at http://127.0.0.1:8000/
 ```
+
+---
+
+## 6. High-Impact Vectors for Future Enterprise Extension
+
+When reviewing or extending Sentinel, consider these high-value engineering vectors:
+
+### Vector A: Real-Time ERP & TMS Connectors
+- Implement bi-directional connectors for **SAP S/4HANA (IDoc/OData)**, **Oracle NetSuite SuiteTalk**, and **Coupa AP** to ingest live PO, GRN, and vendor master feeds.
+
+### Vector B: Multimodal Invoice Document Parsing
+- Integrate **AWS Textract Queries** or **Azure Document Intelligence** to extract tabular line items, tax IDs, and remittance details directly from PDF/TIFF invoice scans.
+
+### Vector C: Graph Neural Networks for Vendor Collusion Detection
+- Model vendors, bank routing numbers, addresses, and phone numbers in a graph database (Neo4j / Amazon Neptune) to detect multi-entity shell company collusion.
+
+### Vector D: Automated Treasury & Payment Rail Integration
+- Connect payment release webhooks directly to corporate banking APIs (e.g., J.P. Morgan PayConnexion or Stripe Treasury) for automated release upon dual-control authorization.

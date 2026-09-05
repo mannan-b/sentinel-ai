@@ -44,6 +44,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // KPI elements
   const kpiTotal = document.getElementById("kpiTotal");
+  const kpiSTPRate = document.getElementById("kpiSTPRate");
+  const kpiSTPCount = document.getElementById("kpiSTPCount");
   const kpiApproved = document.getElementById("kpiApproved");
   const kpiMatchRate = document.getElementById("kpiMatchRate");
   const kpiApprovedAmount = document.getElementById("kpiApprovedAmount");
@@ -72,7 +74,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const qDupAmount = document.getElementById("qDupAmount");
   const qDupCount = document.getElementById("qDupCount");
 
-  // Modal elements
+  // Dossier Modal elements
   const dossierModal = document.getElementById("dossierModal");
   const btnCloseModal = document.getElementById("btnCloseModal");
   const modalInvoiceId = document.getElementById("modalInvoiceId");
@@ -95,14 +97,35 @@ document.addEventListener("DOMContentLoaded", () => {
   const overrideNotes = document.getElementById("overrideNotes");
   const btnSubmitOverride = document.getElementById("btnSubmitOverride");
 
+  const btnOpenWhyFromDossier = document.getElementById("btnOpenWhyFromDossier");
+  const btnReleasePaymentFromDossier = document.getElementById("btnReleasePaymentFromDossier");
+  const paymentReleaseFeedback = document.getElementById("paymentReleaseFeedback");
+
   // Exception Action Modal
   const exceptionModal = document.getElementById("exceptionModal");
   const btnCloseExceptionModal = document.getElementById("btnCloseExceptionModal");
   const modalExceptionId = document.getElementById("modalExceptionId");
   const modalExceptionDetails = document.getElementById("modalExceptionDetails");
   const exceptionActionSelect = document.getElementById("exceptionActionSelect");
+  const modalGrnReference = document.getElementById("modalGrnReference");
+  const modalReceivedQty = document.getElementById("modalReceivedQty");
   const exceptionResolutionNotes = document.getElementById("exceptionResolutionNotes");
   const btnSubmitExceptionResolution = document.getElementById("btnSubmitExceptionResolution");
+
+  // Why Traceability Modal
+  const whyModal = document.getElementById("whyModal");
+  const btnCloseWhyModal = document.getElementById("btnCloseWhyModal");
+  const whyModalTitle = document.getElementById("whyModalTitle");
+  const whyModalSummary = document.getElementById("whyModalSummary");
+  const whyBlockingReasons = document.getElementById("whyBlockingReasons");
+  const whyReconcileFindings = document.getElementById("whyReconcileFindings");
+  const whyFraudFindings = document.getElementById("whyFraudFindings");
+  const whyCashAtRisk = document.getElementById("whyCashAtRisk");
+  const whyActionOwner = document.getElementById("whyActionOwner");
+
+  // Audit tab elements
+  const btnVerifyAuditChain = document.getElementById("btnVerifyAuditChain");
+  const auditChainStatusBadge = document.getElementById("auditChainStatusBadge");
 
   // Policy Modal
   const policyModal = document.getElementById("policyModal");
@@ -160,79 +183,21 @@ document.addEventListener("DOMContentLoaded", () => {
     renderInvoicesTable();
   });
 
-  // Policy modal open/close
-  btnOpenPolicy.addEventListener("click", () => {
-    if (batchData.policy) {
-      policyPOTolerance.value = batchData.policy.po_tolerance_pct;
-      policyApprovalThreshold.value = batchData.policy.approval_threshold;
-      policyDupThreshold.value = batchData.policy.duplicate_similarity_threshold;
-      policyBankCooling.value = batchData.policy.bank_cooling_days;
-    }
-    policyModal.classList.remove("hidden");
-  });
-
-  btnClosePolicy.addEventListener("click", () => policyModal.classList.add("hidden"));
-
-  btnSavePolicy.addEventListener("click", async () => {
-    const updatedPolicy = {
-      po_tolerance_pct: parseFloat(policyPOTolerance.value) || 5.0,
-      grn_tolerance_pct: 0.0,
-      approval_threshold: parseFloat(policyApprovalThreshold.value) || 10000.0,
-      duplicate_similarity_threshold: parseFloat(policyDupThreshold.value) || 0.85,
-      bank_cooling_days: parseInt(policyBankCooling.value) || 30,
-      high_risk_amount_threshold: 25000.0,
-      auto_approve_clean_3way: true
-    };
-
-    try {
-      const res = await fetch("/api/policy/update", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(updatedPolicy)
-      });
-      if (!res.ok) throw new Error("Failed to update policy");
-      const data = await res.json();
-      policyModal.classList.add("hidden");
-      await loadLatestBatch();
-      alert("Policy updated! Batch was re-evaluated against new thresholds.");
-    } catch (err) {
-      alert("Error saving policy: " + err.message);
-    }
-  });
-
-  function formatUSD(val) {
-    if (val === null || val === undefined) return "$0.00";
-    return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(val);
-  }
-
-  // Load latest batch data
-  async function loadLatestBatch() {
-    try {
-      const res = await fetch("/api/batch/latest");
-      if (!res.ok) throw new Error("Failed to load batch data");
-      batchData = await res.json();
-      updateDashboard();
-    } catch (err) {
-      console.error("Error loading batch:", err);
-    }
-  }
-
-  // Generate synthetic batch
+  // Batch Generation
   btnGenerate.addEventListener("click", async () => {
     const seed = parseInt(batchSeedInput.value) || 42;
     const size = parseInt(batchSizeSelect.value) || 75;
-
-    btnGenerate.disabled = true;
-    btnGenerate.innerHTML = `Generating...`;
-
+    
     try {
+      btnGenerate.disabled = true;
+      btnGenerate.textContent = "Generating...";
       const res = await fetch("/api/batch/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ seed, size })
       });
-      if (!res.ok) throw new Error("Batch generation failed");
-      await runControlPipeline();
+      if (!res.ok) throw new Error("Failed to generate batch");
+      await loadLatestBatch();
     } catch (err) {
       alert("Error generating batch: " + err.message);
     } finally {
@@ -241,62 +206,92 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // Run Control Pipeline
-  async function runControlPipeline() {
-    analysisOverlay.classList.remove("hidden");
-    analysisProgressBar.style.width = "15%";
-    analysisStatusText.textContent = "Step 1/5: Ingesting Invoices & Loading Active Purchase Orders...";
-
-    await new Promise(r => setTimeout(r, 300));
-    analysisProgressBar.style.width = "40%";
-    analysisStatusText.textContent = "Step 2/5: Executing 3-Way Matching (Invoice ↔ PO ↔ Goods Receipt GRN)...";
-
-    await new Promise(r => setTimeout(r, 300));
-    analysisProgressBar.style.width = "65%";
-    analysisStatusText.textContent = "Step 3/5: Running Hybrid Duplicate & Cross-Batch Structuring Matrix...";
-
-    await new Promise(r => setTimeout(r, 300));
-    analysisProgressBar.style.width = "85%";
-    analysisStatusText.textContent = "Step 4/5: Generating AI Recommendations, Prioritizing Exceptions & BEC Gates...";
-
+  // Batch Analysis Pipeline Execution with Real Step Visualizer
+  btnAnalyze.addEventListener("click", async () => {
     try {
-      const res = await fetch("/api/batch/analyze", { method: "POST" });
-      if (!res.ok) throw new Error("Pipeline run failed");
+      btnAnalyze.disabled = true;
+      showProgress(15, "1/6 Ingesting AP Invoice Batch & PO Registry...");
       
-      analysisProgressBar.style.width = "100%";
-      analysisStatusText.textContent = "Step 5/5: Updating AP Payment Queue & Calculating Forward Cash Exposure...";
       await new Promise(r => setTimeout(r, 200));
+      showProgress(35, "2/6 Executing Deterministic 3-Way Reconciliation (Invoice ↔ PO ↔ GRN)...");
+
+      await new Promise(r => setTimeout(r, 200));
+      showProgress(55, "3/6 Running Hybrid Duplicate Scan & Cross-Batch Structuring Matrix...");
+
+      await new Promise(r => setTimeout(r, 200));
+      showProgress(75, "4/6 Synthesizing Evidence-Grounded AI Controller Verdicts...");
+
+      await new Promise(r => setTimeout(r, 150));
+      showProgress(90, "5/6 Updating Payment Queue & AP Cash Outflow Forecast...");
+
+      const res = await fetch("/api/batch/analyze", { method: "POST" });
+      if (!res.ok) throw new Error("Analysis failed");
+
+      showProgress(100, "6/6 Control Run Complete. Ledger Updated.");
+      await new Promise(r => setTimeout(r, 200));
+      hideProgress();
 
       await loadLatestBatch();
     } catch (err) {
-      alert("Error running controller pipeline: " + err.message);
+      hideProgress();
+      alert("Error running control pipeline: " + err.message);
     } finally {
-      setTimeout(() => {
-        analysisOverlay.classList.add("hidden");
-      }, 300);
+      btnAnalyze.disabled = false;
+    }
+  });
+
+  function showProgress(pct, msg) {
+    analysisOverlay.classList.remove("hidden");
+    analysisProgressBar.style.width = `${pct}%`;
+    analysisStatusText.textContent = msg;
+  }
+
+  function hideProgress() {
+    analysisOverlay.classList.add("hidden");
+  }
+
+  // Format Helpers
+  function formatUSD(amount) {
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(amount || 0);
+  }
+
+  // Fetch Latest Batch Data
+  async function loadLatestBatch() {
+    try {
+      const res = await fetch("/api/batch/latest");
+      if (!res.ok) throw new Error("Failed to load batch data");
+      const data = await res.json();
+      batchData = data;
+      renderDashboard();
+    } catch (err) {
+      console.error("Load batch error:", err);
     }
   }
 
-  btnAnalyze.addEventListener("click", runControlPipeline);
-
-  // Update complete UI
-  function updateDashboard() {
+  // Render Dashboard
+  function renderDashboard() {
     const sc = batchData.scorecard;
     const cp = batchData.cash_position;
     if (!sc) return;
 
     // Top KPIs
     kpiTotal.textContent = sc.total_invoices;
-    kpiApproved.textContent = sc.auto_approved_count;
     kpiMatchRate.textContent = `${sc.reconciliation_match_rate}% 3-Way Match Rate`;
-    kpiExceptionsCount.textContent = sc.total_exceptions_count;
-    tabCountExceptions.textContent = sc.total_exceptions_count;
+    
+    if (kpiSTPRate) kpiSTPRate.textContent = `${sc.stp_rate}%`;
+    if (kpiSTPCount) kpiSTPCount.textContent = `${sc.stp_count} Auto-Cleared (No Human)`;
+
+    kpiApproved.textContent = sc.auto_approved_count;
     kpiApprovedAmount.textContent = `${formatUSD(cp ? cp.total_approved_payable : 0)} Approved`;
-    kpiBlockedAmount.textContent = `${formatUSD(sc.payment_value_blocked)} Held in Review`;
+
+    kpiExceptionsCount.textContent = sc.total_exceptions_count;
+    kpiBlockedAmount.textContent = `${formatUSD(sc.payment_value_blocked)} Held / Under Review`;
+
     kpiCashAtRisk.textContent = formatUSD(sc.cash_currently_at_risk);
     kpiDuplicatePrevented.textContent = formatUSD(sc.duplicate_value_prevented);
+    tabCountExceptions.textContent = sc.total_exceptions_count;
 
-    // Counts on filter buttons
+    // Filter Counts
     countAll.textContent = sc.total_invoices;
     countApprove.textContent = sc.auto_approved_count;
     countDup.textContent = sc.reject_duplicate_count;
@@ -421,7 +416,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const filtered = batchData.invoices.filter(matchesInvoiceFilter);
 
     if (filtered.length === 0) {
-      invoicesTableBody.innerHTML = `<tr><td colspan="9" style="text-align:center; padding:32px; color:#64748b;">No invoices matching the current filter.</td></tr>`;
+      invoicesTableBody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:32px; color:#64748b;">No invoices matching the current filter.</td></tr>`;
       return;
     }
 
@@ -451,21 +446,26 @@ document.addEventListener("DOMContentLoaded", () => {
         else matchBadge = `<span class="badge badge-neutral">${rStatus}</span>`;
       }
 
-      // Payment status chip
-      let payChip = `<span class="payment-chip chip-ready">${inv.payment_status}</span>`;
-      if (inv.payment_status === "FRAUD_HOLD") payChip = `<span class="payment-chip chip-hold">FRAUD HOLD</span>`;
-      else if (inv.payment_status === "DUPLICATE_REJECTED") payChip = `<span class="payment-chip chip-dup">REJECTED DUP</span>`;
-      else if (inv.payment_status === "BLOCKED_BY_RECONCILIATION") payChip = `<span class="payment-chip chip-reconcile">RECON BLOCKED</span>`;
-      else if (inv.payment_status === "MISSING_DOCUMENTATION") payChip = `<span class="payment-chip chip-doc">MISSING DOC</span>`;
-      else if (inv.payment_status === "AWAITING_REVIEW") payChip = `<span class="payment-chip chip-reconcile">IN REVIEW</span>`;
-      else if (inv.payment_status === "READY_FOR_PAYMENT") payChip = `<span class="payment-chip chip-ready">READY TO PAY</span>`;
+      // Payment Status badge
+      let paymentBadge = `<span class="badge badge-neutral">${inv.payment_status}</span>`;
+      if (inv.payment_status === "RELEASED") paymentBadge = `<span class="badge badge-approved" style="background:#059669; color:#fff;">✓ RELEASED</span>`;
+      else if (inv.payment_status === "READY_FOR_PAYMENT") paymentBadge = `<span class="badge badge-approved">READY</span>`;
+      else if (inv.payment_status === "FRAUD_HOLD" || inv.payment_status === "PAYMENT_HOLD") paymentBadge = `<span class="badge badge-fraud">HOLD</span>`;
+      else if (inv.payment_status === "BLOCKED_BY_RECONCILIATION" || inv.payment_status === "MISSING_DOCUMENTATION") paymentBadge = `<span class="badge badge-hold">BLOCKED</span>`;
+      else if (inv.payment_status === "DUPLICATE_REJECTED") paymentBadge = `<span class="badge badge-dup">REJECTED</span>`;
 
-      // Cited evidence mini tags
-      let citedTagsHtml = "";
-      if (v && v.cited_evidence) {
-        v.cited_evidence.slice(0, 2).forEach(c => {
-          citedTagsHtml += `<span class="cited-tag-mini">${c.field_path.split('.').pop()}: ${c.observed_value}</span>`;
-        });
+      // Inline facts / highlights
+      let factBadges = "";
+      if (d) {
+        if (d.structuring_evidence.in_structuring_cluster) {
+          factBadges += `<span class="badge badge-fraud" style="margin-right:4px;">Structuring Cluster</span>`;
+        }
+        if (d.bank_evidence.risk_level === "HIGH_RISK_RECENT_CHANGE") {
+          factBadges += `<span class="badge badge-fraud" style="margin-right:4px;">BEC Bank Change</span>`;
+        }
+        if (d.duplicate_evidence.is_duplicate_risk) {
+          factBadges += `<span class="badge badge-dup" style="margin-right:4px;">${d.duplicate_evidence.candidates[0] ? (d.duplicate_evidence.candidates[0].similarity_score * 100).toFixed(0) : 0}% Match</span>`;
+        }
       }
 
       const tr = document.createElement("tr");
@@ -473,30 +473,32 @@ document.addEventListener("DOMContentLoaded", () => {
         <td class="inv-id-cell">${inv.invoice_id}</td>
         <td>
           <div style="font-weight:600; color:#f8fafc;">${inv.vendor_name}</div>
-          <div style="font-size:0.74rem; color:#64748b;">${inv.payment_terms} • Invoiced: ${inv.invoice_date}</div>
+          <div style="font-size:0.75rem; color:#64748b;">${inv.vendor_id}</div>
         </td>
-        <td class="inv-amount-cell">${formatUSD(inv.amount)}</td>
-        <td style="font-family:'JetBrains Mono'; font-size:0.8rem; color:#cbd5e1;">${inv.due_date}</td>
+        <td class="amount-cell">${formatUSD(inv.amount)}</td>
         <td>${matchBadge}</td>
-        <td>${payChip}</td>
         <td>${badgeHtml}</td>
+        <td>${paymentBadge}</td>
         <td>
-          <div class="evidence-preview-box">
-            <div class="evidence-reason-text">${v ? v.primary_reason : 'Pending'}</div>
-            <div class="cited-tags-row">${citedTagsHtml}</div>
-          </div>
+          <div>${factBadges || (v ? v.primary_reason.slice(0, 48) + '...' : '--')}</div>
+          <div style="font-size:0.72rem; color:#64748b; margin-top:2px;">Due: ${inv.due_date} (${inv.payment_terms})</div>
         </td>
         <td>
-          <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.75rem;" onclick="window.sentinelOpenDossier('${inv.invoice_id}')">
-            Dossier
-          </button>
+          <div style="display:flex; gap:6px;">
+            <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.75rem;" onclick="window.sentinelOpenWhy('${inv.invoice_id}')">
+              🔍 Why?
+            </button>
+            <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.75rem;" onclick="window.sentinelOpenDossier('${inv.invoice_id}')">
+              Dossier →
+            </button>
+          </div>
         </td>
       `;
       invoicesTableBody.appendChild(tr);
     });
   }
 
-  // Render Exceptions Table in Workbench
+  // Render Exceptions Workbench Table
   function renderExceptionsTable() {
     exceptionsTableBody.innerHTML = "";
     
@@ -579,11 +581,12 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     const alertItem = batchData.bank_alerts[0];
+    const coolingTarget = batchData.policy ? batchData.policy.bank_cooling_days : 30;
     const controls = [
       { key: "independent_phone_verified", label: "1. Out-of-Band Verbal Callback", sub: "Verified with CFO over verified phone number", status: alertItem.independent_phone_verified },
       { key: "cfo_signoff", label: "2. Controller / CFO Dual-Signoff", sub: "Formal signoff on bank modification record", status: alertItem.cfo_signoff },
       { key: "account_ownership_verified", label: "3. Account Ownership & Void Check", sub: "Verified bank letter / void check on file", status: alertItem.account_ownership_verified },
-      { key: "cooling_period_elapsed", label: "4. Cooling Period Compliance", sub: `${alertItem.days_since_change} of 30 days elapsed`, status: alertItem.cooling_period_elapsed }
+      { key: "cooling_period_elapsed", label: "4. Cooling Period Compliance", sub: `${alertItem.days_since_change} of ${coolingTarget} days elapsed (Deterministic Security Gate)`, status: alertItem.cooling_period_elapsed }
     ];
 
     controls.forEach(c => {
@@ -616,10 +619,13 @@ document.addEventListener("DOMContentLoaded", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ control_name: controlKey, status: "VERIFIED", notes: "Officer manual verification on dashboard" })
       });
-      if (!res.ok) throw new Error("Verification failed");
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || "Verification failed");
+      }
       await loadLatestBatch();
     } catch (err) {
-      alert("Error updating bank control: " + err.message);
+      alert("Bank Control Error: " + err.message);
     }
   };
 
@@ -658,9 +664,20 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!res.ok) throw new Error("Could not fetch audit trail");
       const data = await res.json();
       
+      if (auditChainStatusBadge) {
+        if (data.chain_integrity_valid) {
+          auditChainStatusBadge.className = "badge badge-approved";
+          auditChainStatusBadge.textContent = "✓ SHA-256 Chain Intact";
+        } else {
+          auditChainStatusBadge.className = "badge badge-fraud";
+          auditChainStatusBadge.textContent = "⚠ Chain Integrity Alert";
+        }
+      }
+
       auditTrailBody.innerHTML = "";
       data.events.forEach(ev => {
         const tr = document.createElement("tr");
+        const hashDisplay = ev.event_hash ? ev.event_hash.slice(0, 10) + '...' : 'GENESIS';
         tr.innerHTML = `
           <td style="font-family:'JetBrains Mono'; font-size:0.76rem; color:#94a3b8;">${ev.timestamp}</td>
           <td><span class="badge badge-neutral">${ev.action}</span></td>
@@ -669,6 +686,7 @@ document.addEventListener("DOMContentLoaded", () => {
           <td style="font-size:0.78rem; color:#64748b;">${ev.previous_state || '--'}</td>
           <td style="font-size:0.78rem; color:#10b981; font-weight:600;">${ev.new_state}</td>
           <td style="font-size:0.8rem; color:#cbd5e1;">${ev.reason}</td>
+          <td style="font-family:'JetBrains Mono'; font-size:0.72rem; color:#6366f1;">${hashDisplay}</td>
         `;
         auditTrailBody.appendChild(tr);
       });
@@ -677,9 +695,73 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  // Verify Hash Chain Button
+  if (btnVerifyAuditChain) {
+    btnVerifyAuditChain.addEventListener("click", async () => {
+      try {
+        const res = await fetch("/api/audit-trail/verify");
+        const data = await res.json();
+        alert(`Cryptographic Audit Chain Status:\n\nValid: ${data.valid}\n${data.message}\nTotal Events: ${data.total_events}\nLatest Hash: ${data.latest_hash}`);
+        await loadAuditTrail();
+      } catch (err) {
+        alert("Verification failed: " + err.message);
+      }
+    });
+  }
+
+  // Open "Why?" Traceability Modal
+  async function openWhy(invoiceId) {
+    try {
+      const res = await fetch(`/api/invoices/${invoiceId}/why`);
+      if (!res.ok) throw new Error("Could not load why traceability");
+      const data = await res.json();
+
+      whyModalTitle.textContent = `Decision Traceability: ${data.invoice_id}`;
+      whyModalSummary.textContent = data.summary;
+
+      // Blocking reasons
+      if (data.payment_block_reasons && data.payment_block_reasons.length > 0) {
+        whyBlockingReasons.innerHTML = data.payment_block_reasons.map(r => `
+          <div style="padding:8px 12px; background:rgba(244,63,94,0.12); border-left:3px solid #f43f5e; color:#fecdd3; font-size:0.84rem; margin-bottom:6px; border-radius:4px;">
+            ⚠️ <strong>Blocked:</strong> ${r}
+          </div>
+        `).join("");
+      } else {
+        whyBlockingReasons.innerHTML = `
+          <div style="padding:8px 12px; background:rgba(16,185,129,0.12); border-left:3px solid #10b981; color:#a7f3d0; font-size:0.84rem; border-radius:4px;">
+            ✓ All mandatory payment authorization controls satisfied. Eligible for electronic disbursement.
+          </div>
+        `;
+      }
+
+      // Reconciliation findings
+      whyReconcileFindings.innerHTML = data.reconciliation_findings.map(f => `<div>• ${f}</div>`).join("");
+
+      // Fraud findings
+      whyFraudFindings.innerHTML = data.fraud_risk_findings.length > 0
+        ? data.fraud_risk_findings.map(f => `<div style="color:#fb7185;">• ${f}</div>`).join("")
+        : `<div style="color:#10b981;">• No structuring or fraudulent routing patterns detected.</div>`;
+
+      whyCashAtRisk.textContent = `Cash at Risk: ${formatUSD(data.cash_at_risk_amount)}`;
+      whyActionOwner.textContent = `Action Owner: ${data.action_owner}`;
+
+      whyModal.classList.remove("hidden");
+    } catch (err) {
+      alert("Error loading Why traceability: " + err.message);
+    }
+  }
+  window.sentinelOpenWhy = openWhy;
+
+  if (btnCloseWhyModal) {
+    btnCloseWhyModal.addEventListener("click", () => {
+      whyModal.classList.add("hidden");
+    });
+  }
+
   // Open Dossier Modal
   async function openDossier(invoiceId) {
     activeInvoiceId = invoiceId;
+    if (paymentReleaseFeedback) paymentReleaseFeedback.classList.add("hidden");
     try {
       const res = await fetch(`/api/invoices/${invoiceId}/dossier`);
       if (!res.ok) throw new Error("Could not load dossier");
@@ -744,6 +826,60 @@ document.addEventListener("DOMContentLoaded", () => {
     activeInvoiceId = null;
   });
 
+  if (btnOpenWhyFromDossier) {
+    btnOpenWhyFromDossier.addEventListener("click", () => {
+      if (activeInvoiceId) openWhy(activeInvoiceId);
+    });
+  }
+
+  // Payment Release from Dossier Handler
+  if (btnReleasePaymentFromDossier) {
+    btnReleasePaymentFromDossier.addEventListener("click", async () => {
+      if (!activeInvoiceId) return;
+      try {
+        paymentReleaseFeedback.classList.remove("hidden");
+        paymentReleaseFeedback.style.background = "rgba(99,102,241,0.15)";
+        paymentReleaseFeedback.style.color = "#c7d2fe";
+        paymentReleaseFeedback.textContent = "Evaluating security gates and payment policy controls...";
+
+        const res = await fetch(`/api/invoices/${activeInvoiceId}/release-payment`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            authorizer_role: "FINANCE_CONTROLLER",
+            authorization_notes: "Manual authorization via controller console"
+          })
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          const detail = data.detail || {};
+          const blockingList = detail.blocking_reasons || [detail.message || "Payment release denied."];
+          paymentReleaseFeedback.style.background = "rgba(244,63,94,0.18)";
+          paymentReleaseFeedback.style.color = "#fecdd3";
+          paymentReleaseFeedback.innerHTML = `
+            <strong>🛑 Payment Release Denied by Security Boundary:</strong>
+            <ul style="margin:6px 0 0 16px; padding:0;">
+              ${blockingList.map(r => `<li>${r}</li>`).join("")}
+            </ul>
+          `;
+          return;
+        }
+
+        paymentReleaseFeedback.style.background = "rgba(16,185,129,0.18)";
+        paymentReleaseFeedback.style.color = "#a7f3d0";
+        paymentReleaseFeedback.innerHTML = `<strong>✓ Success:</strong> ${data.message}`;
+
+        await loadLatestBatch();
+        openDossier(activeInvoiceId);
+      } catch (err) {
+        paymentReleaseFeedback.style.background = "rgba(244,63,94,0.18)";
+        paymentReleaseFeedback.style.color = "#fecdd3";
+        paymentReleaseFeedback.textContent = "Payment release error: " + err.message;
+      }
+    });
+  }
+
   // Human Override
   btnSubmitOverride.addEventListener("click", async () => {
     if (!activeInvoiceId) return;
@@ -779,6 +915,8 @@ document.addEventListener("DOMContentLoaded", () => {
       <div style="margin-top:6px; color:#818cf8;"><strong>AI Precedent Recommendation:</strong> ${ex.recommended_action}</div>
     `;
     exceptionResolutionNotes.value = ex.recommended_action;
+    if (modalGrnReference) modalGrnReference.value = "";
+    if (modalReceivedQty) modalReceivedQty.value = "";
     exceptionModal.classList.remove("hidden");
   }
   window.sentinelOpenExceptionAction = openExceptionAction;
@@ -792,18 +930,65 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!activeExceptionId) return;
     const action = exceptionActionSelect.value;
     const notes = exceptionResolutionNotes.value.trim() || "Controller resolution applied";
+    const grnRef = modalGrnReference ? modalGrnReference.value.trim() : null;
+    const recQty = modalReceivedQty && modalReceivedQty.value ? parseFloat(modalReceivedQty.value) : null;
 
     try {
       const res = await fetch(`/api/exceptions/${activeExceptionId}/resolve`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: action, resolution_notes: notes })
+        body: JSON.stringify({
+          action: action,
+          resolution_notes: notes,
+          grn_reference: grnRef || undefined,
+          received_quantity: recQty || undefined
+        })
       });
       if (!res.ok) throw new Error("Resolution failed");
       exceptionModal.classList.add("hidden");
       await loadLatestBatch();
     } catch (err) {
       alert("Error resolving exception: " + err.message);
+    }
+  });
+
+  // Policy Modal
+  btnOpenPolicy.addEventListener("click", () => {
+    if (batchData.policy) {
+      policyPOTolerance.value = batchData.policy.po_tolerance_pct;
+      policyApprovalThreshold.value = batchData.policy.approval_threshold;
+      policyDupThreshold.value = batchData.policy.duplicate_similarity_threshold;
+      policyBankCooling.value = batchData.policy.bank_cooling_days;
+    }
+    policyModal.classList.remove("hidden");
+  });
+
+  btnClosePolicy.addEventListener("click", () => {
+    policyModal.classList.add("hidden");
+  });
+
+  btnSavePolicy.addEventListener("click", async () => {
+    const newPolicy = {
+      po_tolerance_pct: parseFloat(policyPOTolerance.value),
+      approval_threshold: parseFloat(policyApprovalThreshold.value),
+      duplicate_similarity_threshold: parseFloat(policyDupThreshold.value),
+      bank_cooling_days: parseInt(policyBankCooling.value),
+      grn_tolerance_pct: 0.0,
+      high_risk_amount_threshold: 25000.0,
+      auto_approve_clean_3way: true
+    };
+
+    try {
+      const res = await fetch("/api/policy/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newPolicy)
+      });
+      if (!res.ok) throw new Error("Failed to update policy");
+      policyModal.classList.add("hidden");
+      await loadLatestBatch();
+    } catch (err) {
+      alert("Policy Update Error: " + err.message);
     }
   });
 

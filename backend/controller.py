@@ -97,7 +97,7 @@ class FinanceOperationsController:
                     exception_type="STRUCTURING_ATTACK",
                     severity="CRITICAL",
                     priority_score=98.5,
-                    financial_impact=s_ev.cluster_total_amount,
+                    financial_impact=inv.amount,
                     affected_records=s_ev.cluster_invoice_ids,
                     evidence_summary=s_ev.pattern_description or "Structuring evasion",
                     recommended_action="Freeze all disbursements immediately. Route to Internal Audit and Corporate Security.",
@@ -526,3 +526,160 @@ class FinanceOperationsController:
             cash_at_risk=cash_at_risk,
             outflow_forecast=forecast_list
         )
+
+    def can_release_payment(
+        self,
+        invoice: Invoice,
+        dossier: EvidenceDossier,
+        exceptions: List[FinanceException],
+        bank_alert: Optional[BankChangeAlert] = None
+    ) -> Tuple[bool, List[str], List[str], List[str]]:
+        """
+        Deterministic Security Boundary & Payment Authorization Gate.
+        Evaluates 3-way reconciliation, duplicate status, BEC controls, structuring, and approval status.
+        Returns: (permitted: bool, blocking_reasons: List[str], satisfied_controls: List[str], pending_controls: List[str])
+        """
+        blocking_reasons: List[str] = []
+        satisfied_controls: List[str] = []
+        pending_controls: List[str] = []
+
+        # 1. Reconciliation Gate
+        r_ev = dossier.receipt_evidence
+        p_ev = dossier.po_evidence
+        if r_ev.match_status == "MISSING_GRN":
+            blocking_reasons.append("Missing Goods Receipt (GRN): Physical intake verification required before payment.")
+            pending_controls.append("Warehouse Dock GRN Confirmation")
+        elif r_ev.match_status in ["QUANTITY_OVERBILLED", "PARTIAL_RECEIPT_OVERBILL"]:
+            blocking_reasons.append(f"Reconciliation Overbilling: Invoiced qty ({r_ev.invoice_qty_total}) exceeds received dock qty ({r_ev.received_qty_total}).")
+            pending_controls.append("Quantity Discrepancy Resolution / Credit Memo")
+        elif r_ev.match_status == "PRICE_MISMATCH":
+            blocking_reasons.append(f"Price Mismatch: Invoiced unit price exceeds authorized purchase order rate.")
+            pending_controls.append("Procurement Buyer Price Amendment")
+        elif r_ev.match_status == "EXTRA_LINE_ITEM":
+            blocking_reasons.append("Unauthorized Line Item: Invoice contains billing lines not present on approved PO.")
+            pending_controls.append("Buyer Line-Item Authorization")
+        else:
+            satisfied_controls.append("3-Way Match Verified (Invoice ↔ PO ↔ GRN)")
+
+        # 2. Duplicate Gate
+        d_ev = dossier.duplicate_evidence
+        if d_ev.is_duplicate_risk:
+            blocking_reasons.append(f"Duplicate Risk Detected: Match score {d_ev.duplicate_score*100:.1f}% against existing batch records.")
+            pending_controls.append("Duplicate Clearance Review")
+        else:
+            satisfied_controls.append("Duplicate Check Cleared")
+
+        # 3. Structuring / Smurfing Gate
+        s_ev = dossier.structuring_evidence
+        if s_ev.in_structuring_cluster:
+            blocking_reasons.append(f"Structuring Attack Flag: Invoice is part of ${s_ev.cluster_total_amount:,.2f} split invoice cluster.")
+            pending_controls.append("Internal Audit Structuring Clearance")
+        else:
+            satisfied_controls.append("Cross-Batch Structuring Cleared")
+
+        # 4. Collusion Gate
+        c_ev = dossier.collusion_evidence
+        if c_ev.shared_fingerprint_detected:
+            blocking_reasons.append(f"Vendor Collusion Risk: Remittance bank account shared with {', '.join(c_ev.conflicting_vendor_names)}.")
+            pending_controls.append("Vendor Master Identity Audit")
+        else:
+            satisfied_controls.append("Remittance Routing Verified Unique")
+
+        # 5. BEC Bank Fingerprint Dual Control Gate
+        b_ev = dossier.bank_evidence
+        if b_ev.risk_level == "HIGH_RISK_RECENT_CHANGE":
+            if not bank_alert:
+                blocking_reasons.append("Bank Fingerprint Modified: Mandatory BEC dual-control checklist not initialized.")
+                pending_controls.append("BEC Dual-Control Verification")
+            else:
+                if bank_alert.independent_phone_verified != "VERIFIED":
+                    blocking_reasons.append("BEC Control Pending: Out-of-band vendor phone verification required.")
+                    pending_controls.append("Independent Phone Verification")
+                else:
+                    satisfied_controls.append("Independent Phone Verified")
+
+                if bank_alert.cfo_signoff != "VERIFIED":
+                    blocking_reasons.append("BEC Control Pending: Controller / CFO sign-off required.")
+                    pending_controls.append("CFO / Controller Sign-Off")
+                else:
+                    satisfied_controls.append("CFO / Controller Sign-Off Verified")
+
+                if bank_alert.account_ownership_verified != "VERIFIED":
+                    blocking_reasons.append("BEC Control Pending: Bank account ownership verification required.")
+                    pending_controls.append("Account Ownership Verification")
+                else:
+                    satisfied_controls.append("Account Ownership Verified")
+
+                # Deterministic cooling period check
+                if bank_alert.days_since_change < self.policy.bank_cooling_days:
+                    blocking_reasons.append(
+                        f"Cooling Period Active: {bank_alert.days_since_change} days elapsed since bank account change (Policy requires {self.policy.bank_cooling_days} days)."
+                    )
+                    pending_controls.append(f"Cooling Period ({bank_alert.days_since_change}/{self.policy.bank_cooling_days} days)")
+                else:
+                    satisfied_controls.append(f"Cooling Period Satisfied ({bank_alert.days_since_change} days)")
+        else:
+            satisfied_controls.append("Bank Fingerprint Matched & Verified")
+
+        # 6. Unresolved Active Exceptions
+        inv_exceptions = [e for e in exceptions if e.invoice_id == invoice.invoice_id and e.status in ["OPEN", "HUMAN_REVIEW", "ESCALATED"]]
+        if inv_exceptions:
+            for ex in inv_exceptions:
+                blocking_reasons.append(f"Unresolved {ex.exception_type} Exception ({ex.severity} severity): Assigned to {ex.suggested_owner}.")
+                pending_controls.append(f"Resolve Exception {ex.exception_id}")
+
+        # Final decision
+        permitted = (len(blocking_reasons) == 0)
+        return permitted, blocking_reasons, satisfied_controls, pending_controls
+
+    def generate_why_explanation(
+        self,
+        invoice: Invoice,
+        dossier: EvidenceDossier,
+        exception: Optional[FinanceException] = None,
+        bank_alert: Optional[BankChangeAlert] = None
+    ) -> 'WhyExplanation':
+        from backend.models import WhyExplanation
+
+        permitted, blocking, satisfied, pending = self.can_release_payment(
+            invoice=invoice,
+            dossier=dossier,
+            exceptions=[exception] if exception else [],
+            bank_alert=bank_alert
+        )
+
+        r_findings: List[str] = [dossier.receipt_evidence.details]
+        d_findings: List[str] = [dossier.duplicate_evidence.details]
+        f_findings: List[str] = []
+        if dossier.bank_evidence.risk_level != "NORMAL":
+            f_findings.append(dossier.bank_evidence.details)
+        if dossier.structuring_evidence.in_structuring_cluster:
+            f_findings.append(dossier.structuring_evidence.pattern_description or "Structuring cluster detected")
+        if dossier.collusion_evidence.shared_fingerprint_detected:
+            f_findings.append(dossier.collusion_evidence.details)
+
+        cash_at_risk = invoice.amount if (not permitted or invoice.payment_status in ["FRAUD_HOLD", "PAYMENT_HOLD", "BLOCKED_BY_RECONCILIATION", "MISSING_DOCUMENTATION", "AWAITING_REVIEW"]) else 0.0
+
+        if permitted:
+            summary = f"Invoice {invoice.invoice_id} is fully verified and eligible for immediate disbursement."
+            rec_action = "Execute automated electronic disbursement."
+            owner = "TREASURY"
+        else:
+            summary = f"Payment blocked on Invoice {invoice.invoice_id} due to {len(blocking)} pending control policy check(s)."
+            rec_action = blocking[0] if blocking else "Complete compliance review."
+            owner = exception.suggested_owner if exception else "AP_CLERK"
+
+        return WhyExplanation(
+            invoice_id=invoice.invoice_id,
+            summary=summary,
+            is_payment_blocked=(not permitted),
+            payment_status=invoice.payment_status,
+            payment_block_reasons=blocking,
+            reconciliation_findings=r_findings,
+            duplicate_findings=d_findings,
+            fraud_risk_findings=f_findings,
+            cash_at_risk_amount=round(cash_at_risk, 2),
+            recommended_action=rec_action,
+            action_owner=owner
+        )
+

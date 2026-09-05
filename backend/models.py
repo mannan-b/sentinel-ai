@@ -6,7 +6,10 @@ GroundTruthLabel = Literal["legitimate", "duplicate", "fraud_risk", "needs_revie
 VerdictType = Literal["auto_approve", "hold_for_review", "escalate_fraud", "reject_duplicate"]
 PaymentStatus = Literal[
     "READY_FOR_PAYMENT", 
+    "PAYMENT_ELIGIBLE",
+    "RELEASED",
     "AWAITING_REVIEW", 
+    "PAYMENT_HOLD",
     "FRAUD_HOLD", 
     "DUPLICATE_REJECTED", 
     "MISSING_DOCUMENTATION", 
@@ -14,7 +17,7 @@ PaymentStatus = Literal[
     "PAID", 
     "CANCELLED"
 ]
-ApprovalStatus = Literal["PENDING", "APPROVED", "REJECTED", "ESCALATED"]
+ApprovalStatus = Literal["PENDING", "APPROVED", "AUTO_APPROVED", "HELD", "REJECTED", "ESCALATED", "RESOLVED", "RELEASED"]
 ExceptionSeverity = Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"]
 ExceptionStatus = Literal["OPEN", "AI_RECOMMENDED", "HUMAN_REVIEW", "RESOLVED", "ESCALATED"]
 ExceptionOwner = Literal["AP_CLERK", "PROCUREMENT_BUYER", "CONTROLLER", "INTERNAL_AUDIT", "TREASURY"]
@@ -305,6 +308,31 @@ class AuditEvent(BaseModel):
     previous_state: Optional[str] = None
     new_state: str
     reason: str
+    event_hash: str = ""
+    previous_hash: str = ""
+
+class PaymentReleaseEvaluation(BaseModel):
+    invoice_id: str
+    permitted: bool
+    payment_status: PaymentStatus
+    approval_status: ApprovalStatus
+    blocking_reasons: List[str] = Field(default_factory=list)
+    satisfied_controls: List[str] = Field(default_factory=list)
+    pending_controls: List[str] = Field(default_factory=list)
+    evaluation_timestamp: str
+
+class WhyExplanation(BaseModel):
+    invoice_id: str
+    summary: str
+    is_payment_blocked: bool
+    payment_status: str
+    payment_block_reasons: List[str] = Field(default_factory=list)
+    reconciliation_findings: List[str] = Field(default_factory=list)
+    duplicate_findings: List[str] = Field(default_factory=list)
+    fraud_risk_findings: List[str] = Field(default_factory=list)
+    cash_at_risk_amount: float = 0.0
+    recommended_action: str
+    action_owner: str
 
 class ClassMetrics(BaseModel):
     precision: float
@@ -335,6 +363,10 @@ class BatchScorecard(BaseModel):
     
     auto_resolved_pct: float
     human_routing_pct: float
+    
+    # Straight-Through Processing (STP)
+    stp_count: int = 0
+    stp_rate: float = 0.0
     
     # 3-Way Reconciliation & Operational Metrics
     reconciliation_match_rate: float

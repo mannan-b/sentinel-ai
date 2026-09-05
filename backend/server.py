@@ -137,15 +137,16 @@ class OverrideRequest(BaseModel):
     new_verdict: str
     reviewer_notes: str
 
+class ReleasePaymentRequest(BaseModel):
+    authorizer_role: str = "FINANCE_CONTROLLER"
+    authorization_notes: str = "Authorized for electronic disbursement"
+
 class ResolveExceptionRequest(BaseModel):
-    action: str # "RESOLVED" | "ESCALATED" | "SHORT_PAY"
+    action: str # "RESOLVED" | "ESCALATED" | "SHORT_PAY" | "ATTACH_GRN"
     resolution_notes: str
     assigned_owner: Optional[str] = None
-
-class BankControlVerifyRequest(BaseModel):
-    control_name: str # "independent_phone_verified" | "cfo_signoff" | "account_ownership_verified" | "cooling_period_elapsed"
-    status: str # "VERIFIED" | "FAILED" | "PENDING"
-    notes: Optional[str] = "Supervisor control verification"
+    grn_reference: Optional[str] = None
+    received_quantity: Optional[float] = None
 
 @app.get("/api/health")
 def health_check():
@@ -296,6 +297,107 @@ def override_invoice_verdict(invoice_id: str, req: OverrideRequest):
         "cash_position": state.cash_position
     }
 
+@app.post("/api/invoices/{invoice_id}/release-payment")
+def release_invoice_payment(invoice_id: str, req: ReleasePaymentRequest):
+    inv = next((i for i in state.invoices if i.invoice_id == invoice_id), None)
+    if not inv:
+        raise HTTPException(status_code=404, detail=f"Invoice {invoice_id} not found")
+
+    dossier = state.dossiers.get(invoice_id)
+    if not dossier:
+        evidence_engine = EvidenceEngine(
+            purchase_orders=state.purchase_orders,
+            goods_receipts=state.goods_receipts,
+            vendor_masters=state.vendor_masters,
+            recent_bank_changes=state.recent_bank_changes,
+            policy=state.policy
+        )
+        dossier = evidence_engine.build_dossier(inv, state.invoices)
+        state.dossiers[invoice_id] = dossier
+
+    controller = FinanceOperationsController(policy=state.policy)
+    bank_alert = next((a for a in state.bank_alerts if a.vendor_id == inv.vendor_id), None)
+    
+    permitted, blocking_reasons, satisfied_controls, pending_controls = controller.can_release_payment(
+        invoice=inv,
+        dossier=dossier,
+        exceptions=state.exceptions,
+        bank_alert=bank_alert
+    )
+
+    if not permitted:
+        audit_trail.log(
+            action="PAYMENT_RELEASE_ATTEMPTED",
+            actor=req.authorizer_role,
+            affected_record=invoice_id,
+            previous_state=inv.payment_status,
+            new_state="RELEASE_DENIED",
+            reason=f"Payment release denied by security boundary: {'; '.join(blocking_reasons)}"
+        )
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "permitted": False,
+                "message": "Payment release denied by deterministic finance policy controls.",
+                "invoice_id": invoice_id,
+                "blocking_reasons": blocking_reasons,
+                "pending_controls": pending_controls,
+                "satisfied_controls": satisfied_controls
+            }
+        )
+
+    prev_payment_status = inv.payment_status
+    prev_approval_status = inv.approval_status
+    inv.payment_status = "RELEASED"
+    inv.approval_status = "RELEASED"
+
+    # Recalculate cash position & metrics
+    state.cash_position = controller.update_payment_queue_and_cash_position(
+        state.invoices, state.dossiers, state.bank_alerts
+    )
+    state.scorecard = compute_batch_scorecard(state.invoices, state.verdicts, state.dossiers, state.exceptions)
+
+    audit_trail.log(
+        action="PAYMENT_RELEASED",
+        actor=req.authorizer_role,
+        affected_record=invoice_id,
+        previous_state=f"{prev_payment_status}/{prev_approval_status}",
+        new_state="RELEASED",
+        reason=f"{req.authorization_notes} (All {len(satisfied_controls)} mandatory policy gates verified)"
+    )
+
+    return {
+        "permitted": True,
+        "message": f"Payment of ${inv.amount:,.2f} released successfully for invoice {invoice_id}.",
+        "invoice": inv,
+        "satisfied_controls": satisfied_controls,
+        "cash_position": state.cash_position,
+        "scorecard": state.scorecard
+    }
+
+@app.get("/api/invoices/{invoice_id}/why")
+def get_invoice_why_traceability(invoice_id: str):
+    inv = next((i for i in state.invoices if i.invoice_id == invoice_id), None)
+    if not inv:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    dossier = state.dossiers.get(invoice_id)
+    if not dossier:
+        run_controller_pipeline()
+        dossier = state.dossiers.get(invoice_id)
+
+    exception = next((e for e in state.exceptions if e.invoice_id == invoice_id), None)
+    bank_alert = next((a for a in state.bank_alerts if a.vendor_id == inv.vendor_id), None)
+    controller = FinanceOperationsController(policy=state.policy)
+
+    why = controller.generate_why_explanation(
+        invoice=inv,
+        dossier=dossier, # type: ignore
+        exception=exception,
+        bank_alert=bank_alert
+    )
+    return why
+
 @app.post("/api/exceptions/{exception_id}/resolve")
 def resolve_exception(exception_id: str, req: ResolveExceptionRequest):
     ex = next((e for e in state.exceptions if e.exception_id == exception_id), None)
@@ -303,20 +405,86 @@ def resolve_exception(exception_id: str, req: ResolveExceptionRequest):
         raise HTTPException(status_code=404, detail="Exception record not found")
     
     prev_status = ex.status
-    ex.status = "RESOLVED" if req.action in ["RESOLVED", "SHORT_PAY"] else "ESCALATED"
+    inv = next((i for i in state.invoices if i.invoice_id == ex.invoice_id), None)
+
+    # If resolving MISSING_GRN or QUANTITY_MISMATCH or explicit GRN reference provided
+    if req.action in ["RESOLVED", "ATTACH_GRN", "SHORT_PAY"] and inv:
+        if ex.exception_type in ["MISSING_GRN", "QUANTITY_MISMATCH", "EXTRA_LINE_ITEM"] or req.grn_reference:
+            grn_num = req.grn_reference or f"GRN-RESOLVED-{inv.invoice_id}"
+            
+            # Find matching PO
+            po = next((p for p in state.purchase_orders if p.po_number == inv.po_reference), None)
+            
+            # Determine line items to receive
+            grn_items = []
+            if inv.line_items:
+                for item in inv.line_items:
+                    qty = req.received_quantity if req.received_quantity is not None else item.quantity
+                    grn_items.append(LineItem(
+                        item_id=f"RCV-{item.item_id}",
+                        description=item.description,
+                        quantity=qty,
+                        unit_price=item.unit_price,
+                        total_amount=round(qty * item.unit_price, 2)
+                    ))
+            elif po and po.line_items:
+                for item in po.line_items:
+                    grn_items.append(LineItem(
+                        item_id=f"RCV-{item.item_id}",
+                        description=item.description,
+                        quantity=item.quantity,
+                        unit_price=item.unit_price,
+                        total_amount=item.total_amount
+                    ))
+
+            # Upsert into state.goods_receipts
+            existing_grn = next((g for g in state.goods_receipts if g.po_reference == inv.po_reference), None)
+            if existing_grn:
+                existing_grn.line_items = grn_items
+                existing_grn.receiving_status = "FULL"
+                existing_grn.notes = f"Resolution attached: {req.resolution_notes}"
+            else:
+                new_grn = GoodsReceipt(
+                    grn_id=grn_num,
+                    po_reference=inv.po_reference or f"PO-AUTO-{inv.vendor_id}",
+                    vendor_id=inv.vendor_id,
+                    vendor_name=inv.vendor_name,
+                    received_date=inv.submission_date,
+                    line_items=grn_items,
+                    receiving_status="FULL",
+                    receiver_name="Receiving Supervisor",
+                    notes=f"Attached during exception resolution: {req.resolution_notes}"
+                )
+                state.goods_receipts.append(new_grn)
+
+            # Re-evaluate evidence dossier for this invoice
+            evidence_engine = EvidenceEngine(
+                purchase_orders=state.purchase_orders,
+                goods_receipts=state.goods_receipts,
+                vendor_masters=state.vendor_masters,
+                recent_bank_changes=state.recent_bank_changes,
+                policy=state.policy
+            )
+            state.dossiers[inv.invoice_id] = evidence_engine.build_dossier(inv, state.invoices)
+
+            # Re-evaluate agent verdict for this invoice
+            agent = SentinelAPAgent(policy=state.policy)
+            new_v = agent.evaluate_invoice(inv, state.dossiers[inv.invoice_id])
+            for idx, v in enumerate(state.verdicts):
+                if v.invoice_id == inv.invoice_id:
+                    state.verdicts[idx] = new_v
+                    break
+
+    ex.status = "RESOLVED" if req.action in ["RESOLVED", "ATTACH_GRN", "SHORT_PAY"] else "ESCALATED"
     ex.resolution_notes = req.resolution_notes
-    ex.resolved_by = "AP_CONTROLLER"
+    ex.resolved_by = req.assigned_owner or "AP_CONTROLLER"
     ex.resolved_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
 
     # Update corresponding invoice status
-    inv = next((i for i in state.invoices if i.invoice_id == ex.invoice_id), None)
     if inv:
-        if req.action == "RESOLVED":
+        if req.action in ["RESOLVED", "ATTACH_GRN", "SHORT_PAY"]:
             inv.payment_status = "READY_FOR_PAYMENT"
-            inv.approval_status = "APPROVED"
-        elif req.action == "SHORT_PAY":
-            inv.payment_status = "READY_FOR_PAYMENT"
-            inv.approval_status = "APPROVED"
+            inv.approval_status = "RESOLVED"
         elif req.action == "ESCALATED":
             inv.payment_status = "FRAUD_HOLD"
             inv.approval_status = "ESCALATED"
@@ -338,8 +506,10 @@ def resolve_exception(exception_id: str, req: ResolveExceptionRequest):
     )
 
     return {
-        "message": f"Exception {exception_id} updated to {ex.status}",
+        "message": f"Exception {exception_id} successfully {ex.status.lower()}.",
         "exception": ex,
+        "invoice": inv,
+        "dossier": state.dossiers.get(ex.invoice_id),
         "scorecard": state.scorecard,
         "cash_position": state.cash_position
     }
@@ -349,6 +519,21 @@ def verify_bank_control(vendor_id: str, req: BankControlVerifyRequest):
     alert = next((a for a in state.bank_alerts if a.vendor_id == vendor_id), None)
     if not alert:
         raise HTTPException(status_code=404, detail="Bank change alert not found for vendor")
+
+    # Enforce deterministic cooling period validation
+    if req.control_name == "cooling_period_elapsed" and req.status == "VERIFIED":
+        if alert.days_since_change < state.policy.bank_cooling_days:
+            audit_trail.log(
+                action="BANK_CONTROL_BLOCKED",
+                actor="SECURITY_GATEWAY",
+                affected_record=f"Vendor_{vendor_id}",
+                new_state="VERIFICATION_REJECTED",
+                reason=f"Cooling period bypass attempt rejected: {alert.days_since_change}/{state.policy.bank_cooling_days} days elapsed."
+            )
+            raise HTTPException(
+                status_code=400,
+                detail=f"Deterministic Security Constraint: Bank cooling period requires {state.policy.bank_cooling_days} days. Only {alert.days_since_change} days have elapsed."
+            )
 
     if req.control_name == "independent_phone_verified":
         alert.independent_phone_verified = req.status # type: ignore
@@ -393,7 +578,9 @@ def verify_bank_control(vendor_id: str, req: BankControlVerifyRequest):
     return {
         "message": f"Bank control '{req.control_name}' set to {req.status}",
         "alert": alert,
-        "cash_position": state.cash_position
+        "all_controls_satisfied": all_pass,
+        "cash_position": state.cash_position,
+        "scorecard": state.scorecard
     }
 
 @app.post("/api/policy/update")
@@ -422,9 +609,22 @@ def update_policy(policy: FinanceControlPolicy):
 
 @app.get("/api/audit-trail")
 def get_audit_trail():
+    is_valid, msg = audit_trail.verify_chain_integrity()
     return {
         "total_events": len(audit_trail.events),
+        "chain_integrity_valid": is_valid,
+        "chain_status": msg,
         "events": audit_trail.get_events(limit=100)
+    }
+
+@app.get("/api/audit-trail/verify")
+def verify_audit_trail_chain():
+    is_valid, msg = audit_trail.verify_chain_integrity()
+    return {
+        "valid": is_valid,
+        "message": msg,
+        "total_events": len(audit_trail.events),
+        "latest_hash": audit_trail._latest_hash
     }
 
 @app.get("/api/cash-position")

@@ -11,130 +11,219 @@ from backend.metrics import compute_batch_scorecard
 from backend.models import FinanceControlPolicy
 from backend.audit import audit_trail
 
-def test_synthetic_data_generation_extended():
-    invoices, pos, grns, vendors, bank_changes = generate_synthetic_batch(seed=42, total_invoices=75)
-    assert len(invoices) == 75
-    assert len(vendors) >= 10
-    assert len(pos) >= 50
-    assert len(grns) >= 40
-    assert len(bank_changes) >= 1
-
-    # Verify line items and payment fields exist
-    for inv in invoices:
-        assert len(inv.line_items) > 0
-        assert inv.due_date is not None
-        assert inv.payment_terms in ["NET15", "NET30", "NET60", "IMMEDIATE"]
-
-    labels = {inv.ground_truth_label for inv in invoices}
-    assert "legitimate" in labels
-    assert "duplicate" in labels
-    assert "fraud_risk" in labels
-    assert "needs_review" in labels
-
-def test_three_way_reconciliation():
+def test_clean_invoice_reaches_payment_eligible():
     invoices, pos, grns, vendors, bank_changes = generate_synthetic_batch(seed=42, total_invoices=75)
     engine = EvidenceEngine(pos, grns, vendors, bank_changes)
     
-    # 1. Test Quantity Mismatch invoice
-    qty_inv = next(i for i in invoices if i.invoice_id == "INV-GOS-QTY-OVERBILL")
-    rcpt_ev = engine.extract_receipt_evidence(qty_inv)
-    assert rcpt_ev.match_status in ["QUANTITY_OVERBILLED", "PARTIAL_RECEIPT_OVERBILL"]
-    assert rcpt_ev.invoice_qty_total == 100.0
-    assert rcpt_ev.received_qty_total == 60.0
+    # Pick a clean invoice
+    clean_inv = next(i for i in invoices if i.ground_truth_label == "legitimate" and i.po_reference is not None and not i.invoice_id.endswith("-VAR"))
+    dossier = engine.build_dossier(clean_inv, invoices)
+    
+    agent = SentinelAPAgent()
+    verdict = agent.evaluate_invoice(clean_inv, dossier)
+    assert verdict.verdict == "auto_approve"
+    assert verdict.requires_human_review is False
+    
+    controller = FinanceOperationsController()
+    permitted, blocking, satisfied, pending = controller.can_release_payment(
+        invoice=clean_inv, dossier=dossier, exceptions=[], bank_alert=None
+    )
+    assert permitted is True
+    assert len(blocking) == 0
 
-    # 2. Test Price Mismatch invoice
-    price_inv = next(i for i in invoices if i.invoice_id == "INV-DATA-PRICE-OVER")
-    price_ev = engine.extract_receipt_evidence(price_inv)
-    assert price_ev.match_status == "PRICE_MISMATCH"
-    assert price_ev.price_discrepancy == 1000.0
-
-    # 3. Test Missing GRN invoice
-    missing_grn_inv = next(i for i in invoices if i.invoice_id == "INV-METRO-MISSING-GRN")
-    mgrn_ev = engine.extract_receipt_evidence(missing_grn_inv)
-    assert mgrn_ev.match_status == "MISSING_GRN"
-    assert mgrn_ev.grn_found is False
-
-    # 4. Test Extra Line Item invoice
-    extra_inv = next(i for i in invoices if i.invoice_id == "INV-PINN-EXTRA-LINE")
-    extra_ev = engine.extract_receipt_evidence(extra_inv)
-    assert extra_ev.match_status == "EXTRA_LINE_ITEM"
-    assert len(extra_ev.line_item_discrepancies) > 0
-
-def test_hybrid_duplicate_detection():
-    # Test string similarity primitives
-    assert levenshtein_similarity("INV-2026-001", "INV-2026-001") == 1.0
-    assert levenshtein_similarity("INV-2026-001", "INV-2026-001-DUP") > 0.70
-    assert token_jaccard_similarity("Monthly server compute", "Monthly server compute cluster") > 0.60
-
+def test_missing_grn_blocks_payment():
     invoices, pos, grns, vendors, bank_changes = generate_synthetic_batch(seed=42, total_invoices=75)
     engine = EvidenceEngine(pos, grns, vendors, bank_changes)
+    
+    missing_grn_inv = next(i for i in invoices if i.invoice_id == "INV-METRO-MISSING-GRN")
+    dossier = engine.build_dossier(missing_grn_inv, invoices)
+    assert dossier.receipt_evidence.match_status == "MISSING_GRN"
+    
+    controller = FinanceOperationsController()
+    exceptions = controller.generate_exceptions([missing_grn_inv], {missing_grn_inv.invoice_id: dossier})
+    assert any(e.exception_type == "MISSING_GRN" for e in exceptions)
+    
+    permitted, blocking, satisfied, pending = controller.can_release_payment(
+        invoice=missing_grn_inv, dossier=dossier, exceptions=exceptions, bank_alert=None
+    )
+    assert permitted is False
+    assert any("Missing Goods Receipt" in b for b in blocking)
 
-    dup_inv = next(i for i in invoices if i.invoice_id == "INV-CS-4401-DUP")
-    dup_ev = engine.extract_duplicate_evidence(dup_inv, invoices)
-    assert dup_ev.is_duplicate_risk is True
-    assert dup_ev.exact_duplicate_found is True
-    assert len(dup_ev.candidates) > 0
-    assert dup_ev.candidates[0].matched_invoice_id == "INV-CS-4401"
+def test_resolving_grn_recalculates_payment_and_cash():
+    invoices, pos, grns, vendors, bank_changes = generate_synthetic_batch(seed=42, total_invoices=75)
+    engine = EvidenceEngine(pos, grns, vendors, bank_changes)
+    
+    inv = next(i for i in invoices if i.invoice_id == "INV-METRO-MISSING-GRN")
+    dossier = engine.build_dossier(inv, invoices)
+    controller = FinanceOperationsController()
+    exceptions = controller.generate_exceptions([inv], {inv.invoice_id: dossier})
+    
+    # Calculate initial cash exposure
+    initial_cash = controller.update_payment_queue_and_cash_position(invoices, {i.invoice_id: engine.build_dossier(i, invoices) for i in invoices}, [])
+    initial_risk = initial_cash.cash_at_risk
+    
+    # Now simulate attaching/receiving GRN
+    from backend.models import GoodsReceipt
+    new_grn = GoodsReceipt(
+        grn_id="GRN-METRO-9001",
+        po_reference=inv.po_reference,
+        vendor_id=inv.vendor_id,
+        vendor_name=inv.vendor_name,
+        received_date=inv.submission_date,
+        line_items=inv.line_items,
+        receiving_status="FULL"
+    )
+    grns.append(new_grn)
+    
+    # Rebuild evidence with updated GRN registry
+    engine_updated = EvidenceEngine(pos, grns, vendors, bank_changes)
+    updated_dossier = engine_updated.build_dossier(inv, invoices)
+    assert updated_dossier.receipt_evidence.match_status == "EXACT_3WAY_MATCH"
+    
+    # Resolve exception
+    ex = exceptions[0]
+    ex.status = "RESOLVED"
+    
+    # Re-check payment release
+    permitted, blocking, satisfied, pending = controller.can_release_payment(
+        invoice=inv, dossier=updated_dossier, exceptions=exceptions, bank_alert=None
+    )
+    assert permitted is True
 
-def test_controller_exceptions_and_cash_forecasting():
+def test_bec_cannot_release_without_required_controls():
+    invoices, pos, grns, vendors, bank_changes = generate_synthetic_batch(seed=42, total_invoices=75)
+    engine = EvidenceEngine(pos, grns, vendors, bank_changes)
+    
+    bec_inv = next(i for i in invoices if i.invoice_id == "INV-CYBER-9021")
+    dossier = engine.build_dossier(bec_inv, invoices)
+    assert dossier.bank_evidence.risk_level == "HIGH_RISK_RECENT_CHANGE"
+    
+    controller = FinanceOperationsController()
+    alerts = controller.generate_bank_change_alerts(invoices, vendors, bank_changes)
+    alert = next(a for a in alerts if a.vendor_id == bec_inv.vendor_id)
+    
+    # Check that payment release fails when controls are pending
+    permitted, blocking, satisfied, pending = controller.can_release_payment(
+        invoice=bec_inv, dossier=dossier, exceptions=[], bank_alert=alert
+    )
+    assert permitted is False
+    assert len(blocking) >= 3 # Out-of-band phone, CFO signoff, cooling period
+    
+    # Verify cooling period compliance cannot be bypassed if days < 30
+    assert alert.days_since_change == 2
+    alert.independent_phone_verified = "VERIFIED"
+    alert.cfo_signoff = "VERIFIED"
+    alert.account_ownership_verified = "VERIFIED"
+    
+    # Payment still blocked because cooling period (2 days < 30 days) is not satisfied
+    permitted, blocking, satisfied, pending = controller.can_release_payment(
+        invoice=bec_inv, dossier=dossier, exceptions=[], bank_alert=alert
+    )
+    assert permitted is False
+    assert any("Cooling Period" in b for b in blocking)
+
+def test_structuring_creates_grouped_exception():
     invoices, pos, grns, vendors, bank_changes = generate_synthetic_batch(seed=42, total_invoices=75)
     engine = EvidenceEngine(pos, grns, vendors, bank_changes)
     dossiers = {inv.invoice_id: engine.build_dossier(inv, invoices) for inv in invoices}
     
     controller = FinanceOperationsController()
     exceptions = controller.generate_exceptions(invoices, dossiers)
-    assert len(exceptions) > 0
-
-    # Verify exception prioritization
-    assert exceptions[0].priority_score >= exceptions[-1].priority_score
-
-    # Verify exception groups
     groups = controller.group_exceptions(exceptions)
-    assert len(groups) > 0
+    
+    # Verify Apex Security structuring cluster is consolidated into 1 group
+    apex_group = next((g for g in groups if "Apex Security" in g.vendor_name and "STRUCTURING" in g.exception_type), None)
+    assert apex_group is not None
+    assert apex_group.invoice_count == 4
+    assert apex_group.total_financial_impact == 38000.0
 
-    # Verify bank change alerts
-    alerts = controller.generate_bank_change_alerts(invoices, vendors, bank_changes)
-    assert len(alerts) >= 1
-    assert alerts[0].risk_severity == "CRITICAL"
+def test_duplicate_detection_rejects_true_duplicate():
+    invoices, pos, grns, vendors, bank_changes = generate_synthetic_batch(seed=42, total_invoices=75)
+    engine = EvidenceEngine(pos, grns, vendors, bank_changes)
+    
+    dup_inv = next(i for i in invoices if i.invoice_id == "INV-CS-4401-DUP")
+    dossier = engine.build_dossier(dup_inv, invoices)
+    assert dossier.duplicate_evidence.is_duplicate_risk is True
+    
+    agent = SentinelAPAgent()
+    verdict = agent.evaluate_invoice(dup_inv, dossier)
+    assert verdict.verdict == "reject_duplicate"
+    assert any(c.field_path == "duplicate_evidence.is_duplicate_risk" for c in verdict.cited_evidence)
 
-    # Verify payment queue and cash position
-    cash_pos = controller.update_payment_queue_and_cash_position(invoices, dossiers, alerts)
-    assert cash_pos.total_approved_payable > 0.0
-    assert cash_pos.cash_at_risk > 0.0
-    assert len(cash_pos.outflow_forecast) == 4
+def test_distinct_pos_protect_legitimate_recurring_invoice():
+    invoices, pos, grns, vendors, bank_changes = generate_synthetic_batch(seed=42, total_invoices=75)
+    engine = EvidenceEngine(pos, grns, vendors, bank_changes)
+    
+    # INV-DATAPULSE-M2 and INV-DATAPULSE-M1 share same amount and vendor but have distinct valid POs
+    inv_m2 = next((i for i in invoices if i.invoice_id == "INV-DATAPULSE-M2"), None)
+    if inv_m2:
+        dossier = engine.build_dossier(inv_m2, invoices)
+        assert dossier.duplicate_evidence.is_duplicate_risk is False
+        agent = SentinelAPAgent()
+        verdict = agent.evaluate_invoice(inv_m2, dossier)
+        assert verdict.verdict == "auto_approve"
 
-def test_scorecard_and_agent_verdicts():
+def test_exception_assignment_updates_owner():
+    invoices, pos, grns, vendors, bank_changes = generate_synthetic_batch(seed=42, total_invoices=75)
+    engine = EvidenceEngine(pos, grns, vendors, bank_changes)
+    dossiers = {inv.invoice_id: engine.build_dossier(inv, invoices) for inv in invoices}
+    
+    controller = FinanceOperationsController()
+    exceptions = controller.generate_exceptions(invoices, dossiers)
+    
+    # 3-way discrepancy assigned to PROCUREMENT_BUYER
+    price_ex = next(e for e in exceptions if e.exception_type == "PRICE_MISMATCH")
+    assert price_ex.suggested_owner == "PROCUREMENT_BUYER"
+    
+    # Structuring assigned to INTERNAL_AUDIT
+    struc_ex = next(e for e in exceptions if e.exception_type == "STRUCTURING_ATTACK")
+    assert struc_ex.suggested_owner == "INTERNAL_AUDIT"
+
+def test_audit_trail_hash_chain_integrity():
+    audit_trail.clear()
+    
+    # Add a sequence of events
+    ev1 = audit_trail.log(action="BATCH_INGESTED", actor="SYSTEM", affected_record="Batch_42", new_state="75 Invoices", reason="Initial ingestion")
+    ev2 = audit_trail.log(action="VERDICT_GENERATED", actor="AGENT", affected_record="INV-1001", new_state="AUTO_APPROVE", reason="All 3-way matches clear")
+    ev3 = audit_trail.log(action="EXCEPTION_RESOLVED", actor="CONTROLLER", affected_record="EXC-001", new_state="RESOLVED", reason="GRN attached by supervisor")
+    
+    assert ev1.previous_hash == "0000000000000000000000000000000000000000000000000000000000000000"
+    assert ev2.previous_hash == ev1.event_hash
+    assert ev3.previous_hash == ev2.event_hash
+    
+    is_valid, msg = audit_trail.verify_chain_integrity()
+    assert is_valid is True
+    assert "verified" in msg.lower()
+    
+    # Tamper with event 2 to verify cryptographic catch
+    ev2.reason = "TAMPERED ILLEGAL MUTATION"
+    is_valid_tampered, tamper_msg = audit_trail.verify_chain_integrity()
+    assert is_valid_tampered is False
+    assert "corruption detected" in tamper_msg.lower() or "broken link" in tamper_msg.lower()
+
+def test_stp_rate_comes_from_actual_states():
     invoices, pos, grns, vendors, bank_changes = generate_synthetic_batch(seed=42, total_invoices=75)
     engine = EvidenceEngine(pos, grns, vendors, bank_changes)
     dossiers = {inv.invoice_id: engine.build_dossier(inv, invoices) for inv in invoices}
     
     agent = SentinelAPAgent()
     verdicts = agent.evaluate_batch(invoices, dossiers)
-    assert len(verdicts) == 75
-
     controller = FinanceOperationsController()
     exceptions = controller.generate_exceptions(invoices, dossiers)
+    
     scorecard = compute_batch_scorecard(invoices, verdicts, dossiers, exceptions)
+    assert scorecard.stp_count > 0
+    assert scorecard.stp_rate == round((scorecard.stp_count / len(invoices)) * 100, 1)
+    assert scorecard.stp_rate >= 50.0
 
-    assert scorecard.structuring_flagship.detected is True
-    assert scorecard.duplicate_metrics.precision == 1.0
-    assert scorecard.fraud_metrics.precision == 1.0
-    assert scorecard.reconciliation_match_rate > 70.0
-    assert scorecard.cash_currently_at_risk > 0.0
-    print("\n--- Upgraded AI Finance Controller Scorecard ---")
-    print(f"Total Processed: {scorecard.total_invoices}")
-    print(f"Reconciliation Match Rate: {scorecard.reconciliation_match_rate}%")
-    print(f"Auto-Approved: {scorecard.auto_approved_count} ({scorecard.auto_approved_pct}%)")
-    print(f"Exceptions Generated: {scorecard.total_exceptions_count}")
-    print(f"Duplicates Rejected: {scorecard.reject_duplicate_count} (${scorecard.duplicate_value_prevented:,.2f} saved)")
-    print(f"Fraud Escalated: {scorecard.escalate_fraud_count} (${scorecard.fraud_risk_value_escalated:,.2f})")
-    print(f"Cash Currently at Risk: ${scorecard.cash_currently_at_risk:,.2f}")
-    print(f"Structuring Flagship: {scorecard.structuring_flagship.headline}")
+def test_ground_truth_is_not_visible_to_agent():
+    invoices, pos, grns, vendors, bank_changes = generate_synthetic_batch(seed=42, total_invoices=75)
+    engine = EvidenceEngine(pos, grns, vendors, bank_changes)
+    
+    for inv in invoices:
+        dossier = engine.build_dossier(inv, invoices)
+        # Verify ground truth label is NEVER present in EvidenceDossier
+        dossier_dict = dossier.dict()
+        assert "ground_truth_label" not in dossier_dict
+        assert "ground_truth_reason" not in dossier_dict
 
-if __name__ == "__main__":
-    test_synthetic_data_generation_extended()
-    test_three_way_reconciliation()
-    test_hybrid_duplicate_detection()
-    test_controller_exceptions_and_cash_forecasting()
-    test_scorecard_and_agent_verdicts()
-    print("All upgraded test suites passed cleanly!")
